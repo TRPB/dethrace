@@ -3980,6 +3980,11 @@ void RenderProximityRays(br_pixelmap* pRender_screen, br_pixelmap* pDepth_buffer
     int i;
     float seed;
     tU32 the_time;
+#ifdef DETHRACE_3DFX_PATCH
+    if (gNo_2d_effects) {
+        SetLineModelCols(1);
+    }
+#endif
     br_vector3 car_pos;
     br_vector3 ped_pos;
     br_vector3 car_pos_cam;
@@ -4015,6 +4020,12 @@ void RenderProximityRays(br_pixelmap* pRender_screen, br_pixelmap* pDepth_buffer
     }
 #endif
     StartPipingSession(ePipe_chunk_prox_ray);
+#ifdef DETHRACE_3DFX_PATCH
+    if (gNo_2d_effects) {
+        BrActorRemove(gLine_actor);
+        BrActorAdd(pCamera, gLine_actor);
+    }
+#endif
     for (i = 0; i < COUNT_OF(gProximity_rays); i++) {
         if (gProximity_rays[i].start_time == 0) {
             continue;
@@ -4074,6 +4085,12 @@ void RenderProximityRays(br_pixelmap* pRender_screen, br_pixelmap* pDepth_buffer
             gProximity_rays[i].start_time = 0;
         }
     }
+#ifdef DETHRACE_3DFX_PATCH
+    if (gNo_2d_effects) {
+        BrActorRemove(gLine_actor);
+        BrActorAdd(gDont_render_actor, gLine_actor);
+    }
+#endif
     EndPipingSession();
 #ifdef DETHRACE_3DFX_PATCH
     if (gNo_2d_effects) {
