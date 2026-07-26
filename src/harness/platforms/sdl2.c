@@ -33,7 +33,6 @@ static struct {
 
 // Callbacks back into original game code
 extern void QuitGame(void);
-extern br_pixelmap* gBack_screen;
 
 #ifdef DETHRACE_SDL_DYNAMIC
 #ifdef _WIN32
@@ -85,7 +84,7 @@ static void calculate_viewport(int window_width, int window_height) {
     float aspect_ratio;
 
     aspect_ratio = (float)window_width / window_height;
-    target_aspect_ratio = (float)gBack_screen->width / gBack_screen->height;
+    target_aspect_ratio = (float)render_width / render_height;
 
     vp_width = window_width;
     vp_height = window_height;
@@ -98,8 +97,8 @@ static void calculate_viewport(int window_width, int window_height) {
     }
     viewport.x = (window_width - vp_width) / 2;
     viewport.y = (window_height - vp_height) / 2;
-    viewport.scale_x = (float)vp_width / gBack_screen->width;
-    viewport.scale_y = (float)vp_height / gBack_screen->height;
+    viewport.scale_x = (float)vp_width / render_width;
+    viewport.scale_y = (float)vp_height / render_height;
 }
 
 static int SDL2_Harness_SetWindowPos(void* hWnd, int x, int y, int nWidth, int nHeight) {
@@ -198,23 +197,19 @@ static int SDL2_Harness_GetMouseButtons(int* pButton1, int* pButton2) {
 }
 
 static int SDL2_Harness_GetMousePosition(int* pX, int* pY) {
-    int window_width, window_height;
     float lX, lY;
 
     if (SDL2_GetMouseFocus() != window) {
         return 0;
     }
-    SDL2_GetWindowSize(window, &window_width, &window_height);
-
     SDL2_GetMouseState(pX, pY);
     if (renderer != NULL) {
         // software renderer
         SDL2_RenderWindowToLogical(renderer, *pX, *pY, &lX, &lY);
     } else {
-        // hardware renderer
-        // handle case where window is stretched larger than the pixel size
-        lX = *pX * (640.0f / window_width);
-        lY = *pY * (480.0f / window_height);
+        // hardware renderer - map window coords through viewport to game coords
+        lX = (*pX - viewport.x) / viewport.scale_x;
+        lY = (*pY - viewport.y) / viewport.scale_y;
     }
     *pX = (int)lX;
     *pY = (int)lY;
@@ -249,13 +244,15 @@ static void SDL2_Harness_CreateWindow(const char* title, int width, int height, 
     render_width = width;
     render_height = height;
 
-    window_width = width;
-    window_height = height;
-
-    // special case lores and make a bigger window
-    if (width == 320 && height == 200) {
+    if (harness_game_config.screen_width > 0 && harness_game_config.screen_height > 0) {
+        window_width = harness_game_config.screen_width;
+        window_height = harness_game_config.screen_height;
+    } else if (width == 320 && height == 200) {
         window_width = 640;
         window_height = 480;
+    } else {
+        window_width = width;
+        window_height = height;
     }
 
     if (SDL2_Init(SDL_INIT_VIDEO) != 0) {
@@ -269,6 +266,10 @@ static void SDL2_Harness_CreateWindow(const char* title, int width, int height, 
 
     if (window_type == eWindow_type_opengl) {
 
+        SDL2_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL2_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL2_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+
         window = SDL2_CreateWindow(title,
             SDL_WINDOWPOS_CENTERED,
             SDL_WINDOWPOS_CENTERED,
@@ -278,10 +279,6 @@ static void SDL2_Harness_CreateWindow(const char* title, int width, int height, 
         if (window == NULL) {
             LOG_PANIC2("Failed to create window: %s", SDL2_GetError());
         }
-
-        SDL2_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL2_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL2_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
         gl_context = SDL2_GL_CreateContext(window);
 
         if (gl_context == NULL) {
@@ -326,10 +323,7 @@ static void SDL2_Harness_CreateWindow(const char* title, int width, int height, 
 
     SDL2_ShowCursor(SDL_DISABLE);
 
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.scale_x = 1;
-    viewport.scale_y = 1;
+    calculate_viewport(window_width, window_height);
 }
 
 static void SDL2_Harness_Swap(br_pixelmap* back_buffer) {

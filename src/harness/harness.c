@@ -508,6 +508,12 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
         gSausage_override = (value[0] == '1');
     } else if (MATCH("General", "Hires")) {
         gGraf_spec_index = (value[0] == '1');
+    } else if (MATCH("General", "Width")) {
+        harness_game_config.screen_width = atoi(value);
+    } else if (MATCH("General", "Height")) {
+        harness_game_config.screen_height = atoi(value);
+    } else if (MATCH("General", "Msaa")) {
+        harness_game_config.msaa_samples = atoi(value);
     } else if (MATCH("General", "PhysicsPerFrame")) {
         harness_game_config.physics_per_frame = (value[0] == '1');
     }
@@ -557,15 +563,18 @@ int Harness_ProcessIniFile(void) {
     int i;
     char path[1024];
 
-    if (OS_GetPrefPath(path, "dethrace")) {
-        strcpy(path, "./");
-    }
-    strcat(path, "dethrace.ini");
-    LOG_INFO2("Loading ini file %s", path);
-
-    if (ini_parse(path, Harness_Ini_Callback, NULL) < 0) {
-        LOG_DEBUG2("Failed to load config file %s", path);
-        return 1;
+    if (ini_parse("dethrace.ini", Harness_Ini_Callback, NULL) == 0) {
+        LOG_INFO("Loading ini file ./dethrace.ini");
+    } else {
+        if (OS_GetPrefPath(path, "dethrace")) {
+            return 1;
+        }
+        strcat(path, "dethrace.ini");
+        LOG_INFO2("Loading ini file %s", path);
+        if (ini_parse(path, Harness_Ini_Callback, NULL) < 0) {
+            LOG_DEBUG2("Failed to load config file %s", path);
+            return 1;
+        }
     }
 
     // set default game dir

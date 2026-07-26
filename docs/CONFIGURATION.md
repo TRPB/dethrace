@@ -37,6 +37,13 @@ Cutscenes = 0
 ; "hires" mode is 640x480, otherwise default 320x200
 Hires = 1
 
+; Custom window resolution. In OpenGL mode (Emulate3DFX = 1) BRender renders at
+; 640x480 and the OpenGL viewport scales to fill this window, giving sharp output
+; at any resolution -- the same technique nGlide used. In software mode the
+; 640x480 framebuffer is upscaled by SDL. Omit or set to 0 to use the game default.
+Width = 1920
+Height = 1080
+
 ; Only used in 'demo' mode. Default demo time out is 240s (4 mins)
 DemoTimeout = 240
 

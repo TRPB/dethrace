@@ -411,6 +411,7 @@ void PDAllocateScreenAndBack(void) {
                 BRT_HEIGHT_I32, gGraf_specs[gGraf_spec_index].phys_height,
                 BRT_OPENGL_CALLBACKS_P, &gl_callbacks,
                 BRT_PIXEL_TYPE_U8, BR_PMT_RGB_565,
+                BRT_MSAA_SAMPLES_I32, harness_game_config.msaa_samples,
                 BR_NULL_TOKEN);
         }
     }

@@ -67,6 +67,10 @@ typedef struct tHarness_game_config {
     int game_dirs_count;
     tHarness_game_dir game_dirs[10];
     char default_game[256];
+
+    int screen_width;
+    int screen_height;
+    int msaa_samples;
 } tHarness_game_config;
 
 extern tHarness_game_info harness_game_info;
