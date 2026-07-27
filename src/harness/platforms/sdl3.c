@@ -265,9 +265,14 @@ static void SDL3_Harness_CreateWindow(const char* title, int width, int height, 
     }
 
     if (window_type == eWindow_type_opengl) {
+        SDL3_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL3_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL3_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         SDL3_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+        if (harness_game_config.msaa_samples > 0) {
+            SDL3_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+            SDL3_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, harness_game_config.msaa_samples);
+        }
 
         window = SDL3_CreateWindow(title,
             window_width, window_height,
