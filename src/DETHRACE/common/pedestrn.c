@@ -30,7 +30,7 @@
 #include <time.h>
 
 #define FLAG_WAVING_BASTARD_REF 99
-#define ACTIVE_PED_DXDZ 11.f
+#define ACTIVE_PED_DXDZ 110.f
 
 #define FOURCC(A, B, C, D) (((A & 0xff) << 24) | ((B & 0xff) << 16) | ((C & 0xff) << 8) | ((D & 0xff) << 0))
 #define PEDESTRIAN_MAGIC FOURCC('P', 'e', 'd', '!')
