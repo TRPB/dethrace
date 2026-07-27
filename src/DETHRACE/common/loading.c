@@ -434,7 +434,7 @@ void LoadGeneralParameters(void) {
     }
     gCamera_hither = GetAScalar(f);
     gCamera_hither *= HITHER_MULTIPLIER;
-    gCamera_yon = GetAScalar(f);
+    gCamera_yon = GetAScalar(f) * 10.f;
     gCamera_angle = GetAScalar(f);
     gAmbient_adjustment = GetAScalar(f) / 100.0f;
     gDim_amount = GetAnInt(f);
