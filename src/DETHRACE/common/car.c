@@ -151,6 +151,25 @@ int gDouble_pling_water = 0;
 // GLOBAL: CARM95 0x00514da0
 int gStop_opponents_moving = 0;
 
+#ifdef DETHRACE_FIX_BUGS
+// PhysicsPerFrame runs the collision resolver at the render rate. On ramps the
+// resolver limit-cycles, wobbling the car's vertical position a few units every
+// frame. The follow camera's *height* is EMA-smoothed (gCamera_height) but its
+// *pitch* tracks the raw car Y (see PointCameraAtCar and the ascent override in
+// NormalPositionExternalCamera), so that tiny wobble is amplified into a
+// full-screen vertical heave. gCamera_smooth_look_y/dir_y hold an EMA-smoothed
+// car Y and forward pitch. gCamera_smooth_lag_y tracks how far the smoothed Y
+// lags the true Y (heavily smoothed) so gCamera_aim_y can add it back and aim at
+// the real height without re-introducing the wobble. gCamera_smooth_look gates
+// this to the normal follow camera; gCamera_smooth_look_valid tracks EMA seeding.
+static br_scalar gCamera_smooth_look_y;
+static br_scalar gCamera_smooth_dir_y;
+static br_scalar gCamera_smooth_lag_y;
+static br_scalar gCamera_aim_y;
+static int gCamera_smooth_look;
+static int gCamera_smooth_look_valid;
+#endif
+
 // GLOBAL: CARM95 0x00514da8
 float gDefensive_powerup_factor[6] = { 1.0f, 0.825f, 0.65f, 0.475f, 0.3f, 0.01f };
 
@@ -1188,6 +1207,18 @@ void InterpolateCars(tU32 pLast_frame_time, tU32 pTime) {
         TranslateCar((tCollision_info*)car, -dt);
         BrMatrix34ApplyP(&car->pos, &car->cmpos, &car->car_master_actor->t.t.mat);
         BrVector3InvScale(&car->pos, &car->pos, WORLD_SCALE);
+#ifdef DETHRACE_FIX_BUGS
+        // Draw the viewed car at the same lag-compensated smoothed height the
+        // camera aims at (gCamera_aim_y), so on ramps it sits steady in frame
+        // instead of bobbing against the smoothed camera. Physics is untouched:
+        // only the rendered matrix is nudged, and only within a small clamp.
+        if (car == gCar_to_view && car->driver > eDriver_non_car && gCamera_smooth_look_valid) {
+            br_scalar delta = gCamera_aim_y - car->pos.v[1];
+            if (delta > -0.5f && delta < 0.5f) {
+                car->car_master_actor->t.t.mat.m[3][1] += delta * WORLD_SCALE;
+            }
+        }
+#endif
     }
 }
 
@@ -5322,21 +5353,6 @@ int MoveCamToIncident(tCar_spec* c, tIncident_type* type, float* severity, tInci
     return 0;
 }
 
-#ifdef DETHRACE_FIX_BUGS
-// PhysicsPerFrame runs the collision resolver at the render rate. On ramps the
-// resolver limit-cycles, wobbling the car's vertical position a few units every
-// frame. The follow camera's *height* is EMA-smoothed (gCamera_height) but its
-// *pitch* tracks the raw car Y (see PointCameraAtCar and the ascent override in
-// NormalPositionExternalCamera), so that tiny wobble is amplified into a
-// full-screen vertical heave. These hold an EMA-smoothed car Y and forward pitch
-// so the camera derives its pitch from smoothed vertical values while horizontal
-// tracking stays exact (no lag). gCamera_smooth_look gates it to the normal
-// follow camera; gCamera_smooth_look_valid tracks whether the EMA is seeded.
-static br_scalar gCamera_smooth_look_y;
-static br_scalar gCamera_smooth_dir_y;
-static int gCamera_smooth_look;
-static int gCamera_smooth_look_valid;
-#endif
 
 // IDA: void __usercall PanningExternalCamera(tCar_spec *c@<EAX>, tU32 pTime@<EDX>)
 // FUNCTION: CARM95 0x00488d45
@@ -5577,18 +5593,27 @@ void NormalPositionExternalCamera(tCar_spec* c, tU32 pTime) {
         height_inc = gCamera_zoom * gCamera_zoom + 0.3f;
         time = pTime * 0.001f;
 #ifdef DETHRACE_FIX_BUGS
-        if (harness_game_config.physics_per_frame) {
+        if (harness_game_config.physics_per_frame && harness_game_config.camera_judder_fix) {
             // tau ~65ms: heavily attenuates the per-frame physics wobble while
             // still tracking genuine slope changes closely enough to stay framed.
             br_scalar smooth_rate = time * 15.0f;
+            br_scalar lag_rate = time * 2.0f;
             if (!gCamera_smooth_look_valid || pTime >= 5000) {
                 gCamera_smooth_look_y = c->pos.v[1];
                 gCamera_smooth_dir_y = c->direction.v[1];
+                gCamera_smooth_lag_y = 0.0f;
                 gCamera_smooth_look_valid = 1;
             } else {
+                br_scalar lag;
                 gCamera_smooth_look_y = (gCamera_smooth_look_y + smooth_rate * c->pos.v[1]) / (smooth_rate + 1.0f);
                 gCamera_smooth_dir_y = (gCamera_smooth_dir_y + smooth_rate * c->direction.v[1]) / (smooth_rate + 1.0f);
+                // The smoothed look Y lags the true Y on climbs. Track that lag
+                // (heavily smoothed, tau ~0.5s) and add it back below so the aim
+                // point sits at the real height without the per-frame wobble.
+                lag = c->pos.v[1] - gCamera_smooth_look_y;
+                gCamera_smooth_lag_y = (gCamera_smooth_lag_y + lag_rate * lag) / (lag_rate + 1.0f);
             }
+            gCamera_aim_y = gCamera_smooth_look_y + gCamera_smooth_lag_y;
         } else {
             gCamera_smooth_look_valid = 0;
         }
@@ -5849,10 +5874,10 @@ void PointCameraAtCar(tCar_spec* c, br_matrix34* m1, br_matrix34* m2) {
     BrVector3Sub(&tv2, pos, (br_vector3*)m2->m[3]);
     dist = BrVector3Dot(&tv2, &vn);
 #ifdef DETHRACE_FIX_BUGS
-    // Pitch only: aim vertically at the smoothed car Y (horizontal aim above is
-    // untouched, so tracking has no lag). This stops the ramp wobble from being
-    // amplified into a full-screen heave. See gCamera_smooth_look_y.
-    BrMatrix34PreRotateX(m2, theta - BrRadianToAngle(atan2(m2->m[3][1] - ((gCamera_smooth_look && gCamera_smooth_look_valid) ? gCamera_smooth_look_y : pos->v[1]), dist)));
+    // Pitch only: aim vertically at the lag-compensated smoothed car Y (horizontal
+    // aim above is untouched, so tracking has no lag). This stops the ramp wobble
+    // from being amplified into a full-screen heave. See gCamera_aim_y.
+    BrMatrix34PreRotateX(m2, theta - BrRadianToAngle(atan2(m2->m[3][1] - ((gCamera_smooth_look && gCamera_smooth_look_valid) ? gCamera_aim_y : pos->v[1]), dist)));
 #else
     BrMatrix34PreRotateX(m2, theta - BrRadianToAngle(atan2(m2->m[3][1] - pos->v[1], dist)));
 #endif
