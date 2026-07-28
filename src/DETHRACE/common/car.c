@@ -823,6 +823,20 @@ condition_met:
             }
         }
     } else {
+#ifdef DETHRACE_FIX_BUGS
+        if (c->water_d != 10000.0f && c->auto_special_volume != NULL) {
+            // Water surface face just left the bounding box. Use vertical velocity to
+            // distinguish exiting (rising) from going fully under (sinking). This prevents
+            // water_depth_factor from getting stuck at 1.f via FP rounding, which would
+            // cause MungeSpecialVolume to preserve water physics after the car exits.
+            if (c->v.v[1] > 0.f) {
+                c->auto_special_volume = NULL;
+                c->water_depth_factor = 0.f;
+            } else {
+                c->water_depth_factor = 1.0f;
+            }
+        }
+#endif
         c->water_d = 10000.0;
         if (c->driver == eDriver_local_human) {
             if (gInTheSea == 1) {
