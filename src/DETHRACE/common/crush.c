@@ -6,6 +6,7 @@
 #include "globvrkm.h"
 #include "globvrpb.h"
 #include "graphics.h"
+#include "harness/config.h"
 #include "harness/trace.h"
 #include "loading.h"
 #include "mainloop.h"
@@ -1201,9 +1202,9 @@ int DoCrashEarnings(tCar_spec* pCar1, tCar_spec* pCar2) {
                         credits = 100 * (int)((sqr(0.7 / victim->car_model_actors[victim->principal_car_actor].crush_data.softness_factor) * gWasted_creds[gProgram_state.skill_level] + 50.0f) / 100.0);
                         AwardTime(gWasted_time[gProgram_state.skill_level]);
                         EarnCredits(credits);
-                        if (victim->can_be_stolen && !gOpponents[victim->index].dead
+                        if ((harness_game_config.stealworthy_all_cars || victim->can_be_stolen) && !gOpponents[victim->index].dead
                             // strength_rating is between 1 and 5
-                            && ((PercentageChance(50) && gProgram_state.rank <= gSteal_ranks[gOpponents[victim->index].strength_rating - 1]) || victim->index == BIGAPC_OPPONENT_INDEX)) {
+                            && ((PercentageChance(harness_game_config.stealworthy_percentage) && (harness_game_config.stealworthy_rank_limit_disable || gProgram_state.rank <= gSteal_ranks[gOpponents[victim->index].strength_rating - 1])) || victim->index == BIGAPC_OPPONENT_INDEX)) {
                             StealCar(victim);
                         }
                     }

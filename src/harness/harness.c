@@ -281,6 +281,10 @@ int Harness_Init(int* argc, char* argv[]) {
     // this setting runs physics every frame, smoothing movement out.
     // disabled by default for now until we are happy it doesn't cause other issues
     harness_game_config.physics_per_frame = 0;
+    harness_game_config.camera_judder_fix = 1;
+    harness_game_config.stealworthy_all_cars = 0;
+    harness_game_config.stealworthy_percentage = 50;
+    harness_game_config.stealworthy_rank_limit_disable = 0;
     // limit to 60 fps by default
     harness_game_config.fps = 60;
     // do not freeze timer
@@ -508,11 +512,11 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
         gSausage_override = (value[0] == '1');
     } else if (MATCH("General", "Hires")) {
         gGraf_spec_index = (value[0] == '1');
-    } else if (MATCH("General", "Width")) {
+    } else if (MATCH("Slop", "Width")) {
         harness_game_config.screen_width = atoi(value);
-    } else if (MATCH("General", "Height")) {
+    } else if (MATCH("Slop", "Height")) {
         harness_game_config.screen_height = atoi(value);
-    } else if (MATCH("General", "Msaa")) {
+    } else if (MATCH("Slop", "Msaa")) {
         harness_game_config.msaa_samples = atoi(value);
     } else if (MATCH("General", "PhysicsPerFrame")) {
         harness_game_config.physics_per_frame = (value[0] == '1');
@@ -540,6 +544,19 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
 
     else if (MATCH("Network", "AdapterName")) {
         safe_strcpy(harness_game_config.network_adapter_name, value);
+    }
+
+    else if (MATCH("Slop", "CameraJudderFix")) {
+        harness_game_config.camera_judder_fix = (value[0] == '1');
+    } else if (MATCH("Slop", "StealworthyAllCars")) {
+        harness_game_config.stealworthy_all_cars = (value[0] == '1');
+    } else if (MATCH("Slop", "StealworthyPercentage")) {
+        i = atoi(value);
+        if (i < 0) i = 0;
+        if (i > 100) i = 100;
+        harness_game_config.stealworthy_percentage = i;
+    } else if (MATCH("Slop", "StealworthyRankLimitDisable")) {
+        harness_game_config.stealworthy_rank_limit_disable = (value[0] == '1');
     }
 
     else if (MATCH("Developers", "Diagnostics")) {
