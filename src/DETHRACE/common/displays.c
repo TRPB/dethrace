@@ -912,7 +912,9 @@ int NewTextHeadupSlot2(int pSlot_index, int pFlash_rate, int pLifetime, int pFon
                 int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
                 int x_shift = 0;
                 if (ws_offset > 0) {
-                    if (pSlot_index == eHeadupSlot_timer
+                    if (the_headup->cockpit_anchored) {
+                        x_shift = ws_offset / 2;
+                    } else if (pSlot_index == eHeadupSlot_timer
                         || pSlot_index == eHeadupSlot_misc
                         || pSlot_index == eHeadupSlot_time_award
                         || pSlot_index == eHeadupSlot_time_bonus
@@ -987,7 +989,9 @@ int NewImageHeadupSlot(int pSlot_index, int pFlash_rate, int pLifetime, int pIma
             int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
             int x_shift = 0;
             if (ws_offset > 0) {
-                if (pSlot_index == eHeadupSlot_fancies) {
+                if (the_headup->cockpit_anchored) {
+                    x_shift = ws_offset / 2;
+                } else if (pSlot_index == eHeadupSlot_fancies) {
                     x_shift = ws_offset / 2;
                 } else if (the_headup->original_x > gGraf_specs[gGraf_spec_index].total_width / 2) {
                     x_shift = ws_offset;
@@ -1168,6 +1172,15 @@ void DoDamageScreen(tU32 pThe_time) {
         the_wobble_x = gScreen_wobble_x;
         the_wobble_y = gScreen_wobble_y;
         damage_background_x = gProgram_state.current_car.damage_background_x;
+#ifdef DETHRACE_FIX_BUGS
+        {
+            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            if (ws_offset > 0) {
+                the_wobble_x += ws_offset / 2;
+                damage_background_x += ws_offset / 2;
+            }
+        }
+#endif
     } else {
         the_wobble_x = gProgram_state.current_car.damage_x_offset;
         the_wobble_y = gProgram_state.current_car.damage_y_offset;
@@ -1263,6 +1276,9 @@ void DoInstruments(tU32 pThe_time) {
             }
             the_wobble_x = gScreen_wobble_x;
             the_wobble_y = gScreen_wobble_y;
+#ifdef DETHRACE_FIX_BUGS
+            the_wobble_x += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#endif
         } else {
             the_wobble_x = 0;
             the_wobble_y = 0;
@@ -1489,17 +1505,22 @@ void DoSteeringWheel(tU32 pThe_time) {
         } else if (hands_index >= gProgram_state.current_car.number_of_hands_images) {
             hands_index = gProgram_state.current_car.number_of_hands_images - 1;
         }
+#ifdef DETHRACE_FIX_BUGS
+        int hands_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#else
+        int hands_ws_x = 0;
+#endif
         hands_image = gProgram_state.current_car.lhands_images[hands_index];
         if (hands_image != NULL) {
             DRPixelmapRectangleMaskedCopy(gBack_screen,
-                gProgram_state.current_car.lhands_x[hands_index] + gScreen_wobble_x,
+                gProgram_state.current_car.lhands_x[hands_index] + gScreen_wobble_x + hands_ws_x,
                 gProgram_state.current_car.lhands_y[hands_index] + gScreen_wobble_y,
                 hands_image, 0, 0, hands_image->width, hands_image->height);
         }
         hands_image = gProgram_state.current_car.rhands_images[hands_index];
         if (hands_image != NULL) {
             DRPixelmapRectangleMaskedCopy(gBack_screen,
-                gProgram_state.current_car.rhands_x[hands_index] + gScreen_wobble_x,
+                gProgram_state.current_car.rhands_x[hands_index] + gScreen_wobble_x + hands_ws_x,
                 gProgram_state.current_car.rhands_y[hands_index] + gScreen_wobble_y,
                 hands_image, 0, 0, hands_image->width, hands_image->height);
         }

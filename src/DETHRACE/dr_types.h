@@ -655,6 +655,9 @@ typedef struct tCar_spec_struct {              // size: 0x1a9c
     char driver_name[32];                      // @0x35c
     char grid_icon_names[3][14];               // @0x37c
     tS8* cockpit_images[3];                    // @0x3a8
+#ifdef DETHRACE_FIX_BUGS
+    int cockpit_pixel_width;
+#endif
     br_pixelmap* prat_cam_left;                // @0x3b4
     br_pixelmap* prat_cam_top;                 // @0x3b8
     br_pixelmap* prat_cam_right;               // @0x3bc

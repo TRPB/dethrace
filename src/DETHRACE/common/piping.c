@@ -485,7 +485,7 @@ void AddDataToSession(int pSubject_index, void* pData, tU32 pData_length) {
 
     if (gPipe_buffer_start != NULL && !gAction_replay_mode && gProgram_state.racing) {
         temp_buffer_size = pData_length + (gLocal_buffer_size + offsetof(tPipe_chunk, chunk_data));
-        if (temp_buffer_size < LOCAL_BUFFER_SIZE) {
+        if (temp_buffer_size < LOCAL_BUFFER_SIZE && ((tPipe_session*)gLocal_buffer)->number_of_chunks != 0xFF) {
             REPLAY_DEBUG_ASSERT(((tPipe_session*)gLocal_buffer)->pipe_magic1 == REPLAY_DEBUG_SESSION_MAGIC1);
             ((tPipe_session*)gLocal_buffer)->number_of_chunks++;
             PIPING_REQUIRE(((tPipe_session*)gLocal_buffer)->number_of_chunks != 0);

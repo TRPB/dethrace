@@ -1203,7 +1203,10 @@ void InterpolateCars(tU32 pLast_frame_time, tU32 pTime) {
         // camera aims at (gCamera_aim_y), so on ramps it sits steady in frame
         // instead of bobbing against the smoothed camera. Physics is untouched:
         // only the rendered matrix is nudged, and only within a small clamp.
-        if (car == gCar_to_view && car->driver > eDriver_non_car && gCamera_smooth_look_valid) {
+        // Only nudge the render matrix in external camera mode. In cockpit mode
+        // gCamera is a child of car_master_actor, so a downward nudge (delta < 0)
+        // drags the camera underground on ramps.
+        if (car == gCar_to_view && car->driver > eDriver_non_car && gCamera_smooth_look_valid && !gProgram_state.cockpit_on) {
             br_scalar delta = gCamera_aim_y - car->pos.v[1];
             if (delta > -0.5f && delta < 0.5f) {
                 car->car_master_actor->t.t.mat.m[3][1] += delta * WORLD_SCALE;
@@ -4524,6 +4527,44 @@ void SetAmbientPratCam(tCar_spec* pCar) {
     }
 }
 
+#ifdef DETHRACE_FIX_BUGS
+// When an opponent or cop gets far from the player its physics is turned off ("faffed")
+// and it is dropped from gActive_car_list. The main MungeCarGraphics loop then never
+// advances its wheel-spin grooves or forces its body to the highest-detail actor. With
+// the extended draw distance these cars are now visible far out, so without this their
+// wheels sit frozen and low-detail on a car that is still moving along its route. Keep the
+// wheels turning (from the car's last known speed) and pinned to the min_distance_squared
+// == 0 actor whose articulated full-detail wheels are the ones that render - mirroring how
+// active cars and their wheels are drawn.
+static void MungeInactiveCarWheels(tCar_spec* pCar, tU32 pFrame_period) {
+    int j;
+    float wheel_speed;
+
+    if (pCar->driver <= eDriver_non_car || !pCar->car_model_variable) {
+        return;
+    }
+    for (j = 0; j < pCar->car_actor_count; j++) {
+        if (pCar->car_model_actors[j].min_distance_squared == 0.f) {
+            SwitchCarActor(pCar, j);
+            break;
+        }
+    }
+    if (gAction_replay_mode && ReplayIsPaused()) {
+        return;
+    }
+    wheel_speed = -(pCar->speedo_speed / pCar->non_driven_wheels_circum * (float)pFrame_period);
+    ControlBoundFunkGroovePlus(pCar->non_driven_wheels_spin_ref_1, wheel_speed);
+    ControlBoundFunkGroovePlus(pCar->non_driven_wheels_spin_ref_2, wheel_speed);
+    ControlBoundFunkGroovePlus(pCar->non_driven_wheels_spin_ref_3, wheel_speed);
+    ControlBoundFunkGroovePlus(pCar->non_driven_wheels_spin_ref_4, wheel_speed);
+    wheel_speed = -(pCar->speedo_speed / pCar->driven_wheels_circum * (float)pFrame_period);
+    ControlBoundFunkGroovePlus(pCar->driven_wheels_spin_ref_1, wheel_speed);
+    ControlBoundFunkGroovePlus(pCar->driven_wheels_spin_ref_2, wheel_speed);
+    ControlBoundFunkGroovePlus(pCar->driven_wheels_spin_ref_3, wheel_speed);
+    ControlBoundFunkGroovePlus(pCar->driven_wheels_spin_ref_4, wheel_speed);
+}
+#endif
+
 // IDA: void __usercall MungeCarGraphics(tU32 pFrame_period@<EAX>)
 // FUNCTION: CARM95 0x00485dee
 void MungeCarGraphics(tU32 pFrame_period) {
@@ -4584,6 +4625,15 @@ void MungeCarGraphics(tU32 pFrame_period) {
             }
             if (the_car->driver == eDriver_local_human || !PointOutOfSight(&the_car->pos, gYon_squared)) {
                 the_car->car_master_actor->render_style = BR_RSTYLE_DEFAULT;
+#ifdef DETHRACE_FIX_BUGS
+                // Faffed (physics-off) opponents/cops are absent from gActive_car_list, so
+                // the loop below never spins their wheels or fixes their LOD. Do it here now
+                // that the extended draw distance makes them visible; active cars fall to the
+                // loop below.
+                if (!the_car->active) {
+                    MungeInactiveCarWheels(the_car, pFrame_period);
+                }
+#endif
             } else {
                 the_car->car_master_actor->render_style = BR_RSTYLE_NONE;
                 continue;
@@ -4742,10 +4792,28 @@ void MungeCarGraphics(tU32 pFrame_period) {
         }
 
         if (the_car->driver != eDriver_local_human && the_car->car_model_variable) {
-            for (j = 0; j < the_car->car_actor_count; j++) {
-                if (the_car->car_model_actors[j].min_distance_squared == 0.f) {
-                    SwitchCarActor(the_car, j);
-                    break;
+            if (harness_game_config.extend_draw_distance) {
+                for (j = 0; j < the_car->car_actor_count; j++) {
+                    if (the_car->car_model_actors[j].min_distance_squared == 0.f) {
+                        SwitchCarActor(the_car, j);
+                        break;
+                    }
+                }
+            } else {
+                distance_from_camera = Vector3DistanceSquared(&the_car->car_master_actor->t.t.translate.t, (br_vector3*)gCamera_to_world.m[3]);
+                distance_from_camera /= gCar_simplification_factor[gGraf_spec_index][gCar_simplification_level * 1];
+#ifdef DETHRACE_FIX_BUGS
+                if (gNet_mode != eNet_mode_none && gIt_or_fox >= 0 && gNet_players[gIt_or_fox].car == the_car) {
+#else
+                if (gNet_mode != eNet_mode_none && gNet_players[gIt_or_fox].car == the_car) {
+#endif
+                    distance_from_camera = 0.f;
+                }
+                for (j = 0; j < the_car->car_actor_count; j++) {
+                    if (the_car->car_model_actors[j].min_distance_squared <= distance_from_camera) {
+                        SwitchCarActor(the_car, j);
+                        break;
+                    }
                 }
             }
         }

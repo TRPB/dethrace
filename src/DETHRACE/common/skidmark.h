@@ -3,7 +3,7 @@
 
 #include "dr_types.h"
 
-extern tSkid gSkids[100];
+extern tSkid* gSkids;
 extern char* gBoring_material_names[2];
 extern char* gMaterial_names[2];
 

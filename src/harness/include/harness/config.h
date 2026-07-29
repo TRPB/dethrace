@@ -71,12 +71,16 @@ typedef struct tHarness_game_config {
     int screen_width;
     int screen_height;
     int msaa_samples;
+    int sample_rate_shading;
 
     int camera_judder_fix;
 
     int stealworthy_all_cars;
     int stealworthy_percentage;
     int stealworthy_rank_limit_disable;
+
+    int num_skids;
+    int extend_draw_distance;
 } tHarness_game_config;
 
 extern tHarness_game_info harness_game_info;

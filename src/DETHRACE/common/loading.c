@@ -1984,11 +1984,35 @@ void LoadCar(char* pCar_name, tDriver pDriver, tCar_spec* pCar_spec, int pOwner,
     }
     GetALineAndDontArgue(f, s);
     if (pDriver == eDriver_local_human) {
+#ifdef DETHRACE_FIX_BUGS
+        pCar_spec->cockpit_pixel_width = 0;
+#endif
         for (j = 0; j < COUNT_OF(pCar_spec->cockpit_images); j++) {
             GetALineAndDontArgue(h, s);
             str = strtok(s, "\t ,/");
             if (!gAusterity_mode) {
-                the_image = LoadPixelmap(str);
+#ifdef DETHRACE_FIX_BUGS
+                the_image = NULL;
+                {
+                    int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+                    if (ws_offset > 0) {
+                        tPath_name uw_path;
+                        PathCat(uw_path, gApplication_path, "11X48X8");
+                        PathCat(uw_path, uw_path, "PIXELMAP");
+                        PathCat(uw_path, uw_path, str);
+                        AllowOpenToFail();
+                        the_image = DRPixelmapLoad(uw_path);
+                        DoNotAllowOpenToFail();
+                        if (the_image != NULL && j == 0) {
+                            pCar_spec->cockpit_pixel_width = the_image->width;
+                        }
+                    }
+                }
+                if (the_image == NULL)
+#endif
+                {
+                    the_image = LoadPixelmap(str);
+                }
                 if (the_image == NULL) {
                     FatalError(kFatalError_LoadCockpitImage);
                 }

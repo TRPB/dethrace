@@ -637,7 +637,7 @@ void Copy8BitStripImageTo16Bit(br_pixelmap* pDest, br_int_16 pDest_x, br_int_16 
         pDest_x *= 2;
         pOffset_x *= 2;
         if (pDest_x + pOffset_x > 0) {
-            destn_ptr += 2 * pDest_x + 2 * pOffset_x;
+            destn_ptr += pDest_x + pOffset_x;
         }
         destn_width = 2 * pDest->width;
     }
@@ -2070,9 +2070,19 @@ void RenderAFrame(int pDepth_mask_on) {
     if (cockpit_on) {
         PDUnlockRealBackScreen(1);
         PDLockRealBackScreen(1);
+#ifdef DETHRACE_FIX_BUGS
+        int cock_dest_x;
+        if (gProgram_state.current_car.cockpit_pixel_width > 0) {
+            cock_dest_x = (gGraf_specs[gGraf_spec_index].phys_width - gProgram_state.current_car.cockpit_pixel_width) / 2;
+        } else {
+            cock_dest_x = -gCurrent_graf_data->cock_margin_x + (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        }
+#else
+        int cock_dest_x = -gCurrent_graf_data->cock_margin_x;
+#endif
         CopyStripImage(
             gBack_screen,
-            -gCurrent_graf_data->cock_margin_x,
+            cock_dest_x,
             gScreen_wobble_x,
             -gCurrent_graf_data->cock_margin_y,
             gScreen_wobble_y,
@@ -2091,8 +2101,11 @@ void RenderAFrame(int pDepth_mask_on) {
         }
 
 #ifdef DETHRACE_FIX_BUGS
-        gRearview_screen->base_x = MAX(0, gScreen_wobble_x + gProgram_state.current_car.mirror_left);
-        gRearview_screen->base_y = MAX(0, gScreen_wobble_y + gProgram_state.current_car.mirror_top);
+        {
+            int mirror_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            gRearview_screen->base_x = MAX(0, gScreen_wobble_x + gProgram_state.current_car.mirror_left + mirror_ws_x);
+            gRearview_screen->base_y = MAX(0, gScreen_wobble_y + gProgram_state.current_car.mirror_top);
+        }
 #else
         gRearview_screen->base_x = gScreen_wobble_x + gProgram_state.current_car.mirror_left;
         gRearview_screen->base_y = gScreen_wobble_y + gProgram_state.current_car.mirror_top;
@@ -2233,9 +2246,19 @@ void RenderAFrame(int pDepth_mask_on) {
     } else {
 #if !defined(DETHRACE_3DFX_PATCH)
         if (cockpit_on) {
+#ifdef DETHRACE_FIX_BUGS
+            int cock_dest_x;
+            if (gProgram_state.current_car.cockpit_pixel_width > 0) {
+                cock_dest_x = (gGraf_specs[gGraf_spec_index].phys_width - gProgram_state.current_car.cockpit_pixel_width) / 2;
+            } else {
+                cock_dest_x = -gCurrent_graf_data->cock_margin_x + (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            }
+#else
+            int cock_dest_x = -gCurrent_graf_data->cock_margin_x;
+#endif
             CopyStripImage(
                 gBack_screen,
-                -gCurrent_graf_data->cock_margin_x,
+                cock_dest_x,
                 gScreen_wobble_x,
                 -gCurrent_graf_data->cock_margin_y,
                 gScreen_wobble_y,
@@ -2245,9 +2268,14 @@ void RenderAFrame(int pDepth_mask_on) {
                 gCurrent_graf_data->total_cock_width,
                 gCurrent_graf_data->total_cock_height);
             if (gMirror_on__graphics) {
+#ifdef DETHRACE_FIX_BUGS
+                int mirror_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#else
+                int mirror_ws_x = 0;
+#endif
                 BrPixelmapRectangleCopy(
                     gBack_screen,
-                    gScreen_wobble_x + gProgram_state.current_car.mirror_left,
+                    gScreen_wobble_x + gProgram_state.current_car.mirror_left + mirror_ws_x,
                     gScreen_wobble_y + gProgram_state.current_car.mirror_top,
                     gRearview_screen,
                     -gRearview_screen->origin_x,

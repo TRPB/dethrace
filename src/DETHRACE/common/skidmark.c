@@ -2,6 +2,7 @@
 #include "brender.h"
 #include "globvars.h"
 #include "globvrbm.h"
+#include "harness/config.h"
 #include "harness/trace.h"
 #include "loading.h"
 #include "oil.h"
@@ -13,7 +14,7 @@
 #include <string.h>
 
 // GLOBAL: CARM95 0x00530190
-tSkid gSkids[100];
+tSkid* gSkids;
 
 // GLOBAL: CARM95 0x00507030
 char* gBoring_material_names[2] = { "OILSMEAR.MAT", "ROBSMEAR.MAT" };
@@ -92,7 +93,8 @@ void InitSkids(void) {
 #endif
     }
 
-    for (skid = 0; skid < COUNT_OF(gSkids); skid++) {
+    gSkids = BrMemAllocate(harness_game_config.num_skids * sizeof(tSkid), kMem_misc);
+    for (skid = 0; skid < harness_game_config.num_skids; skid++) {
         gSkids[skid].actor = BrActorAllocate(BR_ACTOR_MODEL, NULL);
         BrActorAdd(gNon_track_actor, gSkids[skid].actor);
         gSkids[skid].actor->t.t.mat.m[1][1] = 0.01f;
@@ -132,7 +134,7 @@ void HideSkid(int pSkid_num) {
 void HideSkids(void) {
     int skid;
 
-    for (skid = 0; skid < COUNT_OF(gSkids); skid++) {
+    for (skid = 0; skid < harness_game_config.num_skids; skid++) {
         HideSkid(skid);
     }
 }
@@ -234,7 +236,7 @@ void SkidSection(tCar_spec* pCar, int pWheel_num, br_vector3* pPos, int pMateria
     }
 
     material = MaterialFromIndex(pMaterial_index);
-    if (pCar->old_skid[pWheel_num] >= COUNT_OF(gSkids)
+    if (pCar->old_skid[pWheel_num] >= harness_game_config.num_skids
         || gSkids[pCar->old_skid[pWheel_num]].actor->material != material
         || SkidLen(pCar->old_skid[pWheel_num]) > 0.5f
         || FarFromLine2D(pPos, &pCar->skid_line_start[pWheel_num], &pCar->skid_line_end[pWheel_num])
@@ -248,7 +250,7 @@ void SkidSection(tCar_spec* pCar, int pWheel_num, br_vector3* pPos, int pMateria
         StretchMark(&gSkids[skid], &pCar->prev_skid_pos[pWheel_num], pPos, pCar->total_length[pWheel_num]);
         PipeSingleSkidAdjustment(skid, &gSkids[skid].actor->t.t.mat, pMaterial_index);
         pCar->old_skid[pWheel_num] = skid;
-        skid = (skid + 1) % COUNT_OF(gSkids);
+        skid = (skid + 1) % harness_game_config.num_skids;
     } else {
         StretchMark(&gSkids[pCar->old_skid[pWheel_num]], &pCar->skid_line_start[pWheel_num], pPos, pCar->total_length[pWheel_num]);
         PipeSingleSkidAdjustment(pCar->old_skid[pWheel_num], &gSkids[pCar->old_skid[pWheel_num]].actor->t.t.mat, pMaterial_index);
@@ -359,7 +361,7 @@ void InitCarSkidStuff(tCar_spec* pCar) {
 void SkidsPerFrame(void) {
     int skid;
 
-    for (skid = 0; skid < COUNT_OF(gSkids); skid++) {
+    for (skid = 0; skid < harness_game_config.num_skids; skid++) {
         if (gSkids[skid].actor->render_style != BR_RSTYLE_NONE) {
             EnsureGroundDetailVisible(&gSkids[skid].actor->t.t.translate.t, &gSkids[skid].normal, &gSkids[skid].pos);
         }
@@ -370,7 +372,7 @@ void SkidsPerFrame(void) {
 void RemoveMaterialsFromSkidmarks(void) {
     int skid;
 
-    for (skid = 0; skid < COUNT_OF(gSkids); skid++) {
+    for (skid = 0; skid < harness_game_config.num_skids; skid++) {
         gSkids[skid].actor->material = NULL;
     }
 }

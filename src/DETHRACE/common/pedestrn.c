@@ -8,6 +8,7 @@
 #include "globvrkm.h"
 #include "globvrpb.h"
 #include "graphics.h"
+#include "harness/config.h"
 #include "harness/trace.h"
 #include "input.h"
 #include "loading.h"
@@ -30,7 +31,7 @@
 #include <time.h>
 
 #define FLAG_WAVING_BASTARD_REF 99
-#define ACTIVE_PED_DXDZ 110.f
+#define ACTIVE_PED_DXDZ 11.f
 
 #define FOURCC(A, B, C, D) (((A & 0xff) << 24) | ((B & 0xff) << 16) | ((C & 0xff) << 8) | ((D & 0xff) << 0))
 #define PEDESTRIAN_MAGIC FOURCC('P', 'e', 'd', '!')
@@ -2491,8 +2492,8 @@ void MungePedestrians(tU32 pFrame_period) {
     gVesuvians_this_time = 0;
     gNumber_of_ped_gibs = 32;
     camera_ptr = gCamera->type_data;
-    max_distance = ACTIVE_PED_DXDZ;
-    gMax_distance_squared = 121.f;
+    max_distance = harness_game_config.extend_draw_distance ? 110.f : ACTIVE_PED_DXDZ;
+    gMax_distance_squared = harness_game_config.extend_draw_distance ? 12100.f : 121.f;
     if (!gAction_replay_mode) {
         MungePedGibs(pFrame_period);
     }
@@ -2592,7 +2593,8 @@ void RespawnPedestrians(void) {
             int ped_respawn_animate;
             x_delta = fabs(the_pedestrian->pos.v[X] - gCamera_to_world.m[3][X]);
             z_delta = fabs(the_pedestrian->pos.v[Z] - gCamera_to_world.m[3][Z]);
-            ped_respawn_animate = x_delta <= ACTIVE_PED_DXDZ && z_delta <= ACTIVE_PED_DXDZ;
+            br_scalar active_dxdz = harness_game_config.extend_draw_distance ? 110.f : ACTIVE_PED_DXDZ;
+            ped_respawn_animate = x_delta <= active_dxdz && z_delta <= active_dxdz;
 #else
 #define ped_respawn_animate 1
 #endif
