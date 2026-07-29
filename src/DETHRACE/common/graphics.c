@@ -1691,7 +1691,12 @@ void ProcessShadow(tCar_spec* pCar, br_actor* pWorld, tTrack_spec* pTrack_spec, 
         } else {
             camera_angle_additional_fudge = sqr(camera_ptr->yon_z - camera_ptr->hither_z);
             camera_hither_fudge = camera_angle_additional_fudge * (pos_cam_space.v[2] * 1.0) / ((pos_cam_space.v[2] - camera_ptr->yon_z) * camera_ptr->yon_z * 65536.0);
+#ifdef DETHRACE_FIX_BUGS
+            // Use !(x >= lo && x < hi) to correctly clamp NaN and +infinity.
+            if (!(camera_hither_fudge >= 0.0002 && camera_hither_fudge < camera_ptr->yon_z - camera_ptr->hither_z)) {
+#else
             if (camera_hither_fudge < 0.0002) {
+#endif
                 camera_hither_fudge = 0.0002;
             }
             camera_ptr->hither_z += camera_hither_fudge;

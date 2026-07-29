@@ -7518,13 +7518,25 @@ int TestForNan(float* f) {
 void CheckCameraHither(void) {
     br_camera* cam;
     // GLOBAL: CARM95 0x514ea4
+#ifdef DETHRACE_FIX_BUGS
+    static float old_hither;
+#else
     static int old_hither;
+#endif
 
     cam = (br_camera*)gCamera->type_data;
     if (TestForNan(&cam->hither_z)) {
+#ifdef DETHRACE_FIX_BUGS
+        cam->hither_z = old_hither;
+#else
         cam->hither_z = (float)old_hither;
+#endif
     }
+#ifdef DETHRACE_FIX_BUGS
+    old_hither = cam->hither_z;
+#else
     old_hither = (int)cam->hither_z;
+#endif
 }
 
 // IDA: void __usercall SetCarSuspGiveAndHeight(tCar_spec *pCar@<EAX>, br_scalar pFront_give_factor, br_scalar pRear_give_factor, br_scalar pDamping_factor, br_scalar pExtra_front_height, br_scalar pExtra_rear_height)
