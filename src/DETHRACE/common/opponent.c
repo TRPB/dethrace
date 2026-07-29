@@ -1465,19 +1465,19 @@ void ProcessGetNearPlayer(tOpponent_spec* pOpponent_spec, tProcess_objective_com
         if (pOpponent_spec->nnext_sections <= 4) {
             CalcGetNearPlayerRoute(pOpponent_spec, &gProgram_state.current_car);
         }
-        res = ProcessFollowPath(pOpponent_spec, ePOC_run, 0, 0, 0);
-        sprintf(str, "Get near: %d", GetOpponentsRealSection(pOpponent_spec, pOpponent_spec->follow_path_data.section_no));
-
-        if (res == eFPR_given_up || res == eFPR_end_of_path) {
-            if (res == eFPR_given_up) {
-                NewObjective(pOpponent_spec, eOOT_pursue_and_twat, &gProgram_state.current_car);
-                return;
-            } else {
-                dr_dprintf("%s: Restarting get_near_player route because ran out of path!", pOpponent_spec->car_spec->driver_name);
-            }
+        if (pOpponent_spec->nnext_sections == 0
+            || (res = ProcessFollowPath(pOpponent_spec, ePOC_run, 0, 0, 0)) == eFPR_end_of_path) {
+            dr_dprintf("%s: Restarting get_near_player route because ran out of path!", pOpponent_spec->car_spec->driver_name);
             ClearOpponentsProjectedRoute(pOpponent_spec);
             CalcGetNearPlayerRoute(pOpponent_spec, &gProgram_state.current_car);
             ProcessFollowPath(pOpponent_spec, ePOC_start, 0, 0, 0);
+            break;
+        }
+        sprintf(str, "Get near: %d", GetOpponentsRealSection(pOpponent_spec, pOpponent_spec->follow_path_data.section_no));
+
+        if (res == eFPR_given_up) {
+            NewObjective(pOpponent_spec, eOOT_pursue_and_twat, &gProgram_state.current_car);
+            return;
         }
 
     default:
@@ -1909,6 +1909,11 @@ void RebuildActiveCarList(void) {
                 gNum_active_cars++;
                 car_spec->active = 1;
             } else {
+#ifdef DETHRACE_FIX_BUGS
+                // Mark faffed cops inactive (the original leaves this stale), so the graphics
+                // pass can tell they need their wheels spun/LOD fixed like other inactive cars.
+                car_spec->active = 0;
+#endif
             }
         }
     }
