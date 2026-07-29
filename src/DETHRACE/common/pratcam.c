@@ -447,6 +447,8 @@ void DoPratcam(tU32 pThe_time) {
     int top_border_height;
     int prat_cam_move_width;
     int right_hand;
+    int prat_left;
+    int prat_right;
     tU32 time_diff;
     tU32 old_last_time;
     br_pixelmap* the_image;
@@ -462,13 +464,25 @@ void DoPratcam(tU32 pThe_time) {
         y_offset = 0;
     }
 
-    right_hand = gProgram_state.current_car.prat_left > gBack_screen->width / 2;
+    prat_left = gProgram_state.current_car.prat_left;
+    prat_right = gProgram_state.current_car.prat_right;
+#ifdef DETHRACE_FIX_BUGS
+    {
+        int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+        if (ws_offset > 0 && prat_left > gGraf_specs[gGraf_spec_index].total_width / 2) {
+            prat_left += ws_offset;
+            prat_right += ws_offset;
+        }
+    }
+#endif
+
+    right_hand = prat_left > gBack_screen->width / 2;
     left_image = gProgram_state.current_car.prat_cam_left;
     right_image = gProgram_state.current_car.prat_cam_right;
     if (right_hand) {
-        prat_cam_move_width = gBack_screen->width - gProgram_state.current_car.prat_left + (left_image != NULL ? left_image->width : 0);
+        prat_cam_move_width = gBack_screen->width - prat_left + (left_image != NULL ? left_image->width : 0);
     } else {
-        prat_cam_move_width = gProgram_state.current_car.prat_right + (right_image != NULL ? right_image->width : 0);
+        prat_cam_move_width = prat_right + (right_image != NULL ? right_image->width : 0);
     }
     time_diff = pThe_time - gProgram_state.pratcam_move_start;
     if (time_diff > 400) {
@@ -535,8 +549,8 @@ void DoPratcam(tU32 pThe_time) {
 #ifdef DETHRACE_3DFX_PATCH
     PDUnlockRealBackScreen(1);
     if (gDevious_2d) {
-        gPrat_model->vertices[1].p.v[0] = gProgram_state.current_car.prat_left + offset;
-        gPrat_model->vertices[0].p.v[0] = gProgram_state.current_car.prat_left + offset;
+        gPrat_model->vertices[1].p.v[0] = prat_left + offset;
+        gPrat_model->vertices[0].p.v[0] = prat_left + offset;
         gPrat_model->vertices[3].p.v[1] = -(y_offset + gProgram_state.current_car.prat_top);
         gPrat_model->vertices[0].p.v[1] = -(y_offset + gProgram_state.current_car.prat_top);
 
@@ -557,7 +571,7 @@ void DoPratcam(tU32 pThe_time) {
     } else {
         DRPixelmapRectangleCopy(
             gBack_screen,
-            gProgram_state.current_car.prat_left + offset,
+            prat_left + offset,
             gProgram_state.current_car.prat_top + y_offset,
             gPrat_buffer,
             0, 0,
@@ -567,7 +581,7 @@ void DoPratcam(tU32 pThe_time) {
 #else
     BrPixelmapRectangleCopy(
         gBack_screen,
-        gProgram_state.current_car.prat_left + offset,
+        prat_left + offset,
         gProgram_state.current_car.prat_top + y_offset,
         gPrat_buffer,
         0, 0,
@@ -579,7 +593,7 @@ void DoPratcam(tU32 pThe_time) {
         top_border_height = the_image->height;
         DRPixelmapRectangleMaskedCopy(
             gBack_screen,
-            gProgram_state.current_car.prat_left + offset,
+            prat_left + offset,
             gProgram_state.current_car.prat_top - top_border_height + y_offset,
             the_image,
             0, 0,
@@ -590,7 +604,7 @@ void DoPratcam(tU32 pThe_time) {
     }
     if (left_image != NULL) {
         DRPixelmapRectangleMaskedCopy(gBack_screen,
-            gProgram_state.current_car.prat_left - left_image->width + offset,
+            prat_left - left_image->width + offset,
             gProgram_state.current_car.prat_top - top_border_height + y_offset,
             left_image,
             0, 0,
@@ -599,7 +613,7 @@ void DoPratcam(tU32 pThe_time) {
     if (right_image != NULL) {
         DRPixelmapRectangleMaskedCopy(
             gBack_screen,
-            gProgram_state.current_car.prat_right + offset - 1,
+            prat_right + offset - 1,
             gProgram_state.current_car.prat_top - top_border_height - 1 + y_offset,
             right_image,
             0, 0,
@@ -609,7 +623,7 @@ void DoPratcam(tU32 pThe_time) {
     if (the_image != NULL) {
         DRPixelmapRectangleMaskedCopy(
             gBack_screen,
-            gProgram_state.current_car.prat_left + offset,
+            prat_left + offset,
             gProgram_state.current_car.prat_bottom + y_offset,
             the_image,
             0, 0,

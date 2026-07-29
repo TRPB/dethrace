@@ -124,11 +124,16 @@ void ChangeSelection(tInterface_spec* pSpec, int* pOld_selection, int* pNew_sele
 // FUNCTION: CARM95 0x0047507b
 void RecopyAreas(tInterface_spec* pSpec, br_pixelmap** pCopy_areas) {
     int i;
+#ifdef DETHRACE_FIX_BUGS
+    int ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#else
+    int ws_x = 0;
+#endif
 
     for (i = 0; i < pSpec->number_of_recopy_areas; i++) {
         BrPixelmapRectangleCopy(
             gBack_screen,
-            pSpec->recopy_areas[i].left[gGraf_data_index],
+            pSpec->recopy_areas[i].left[gGraf_data_index] + ws_x,
             pSpec->recopy_areas[i].top[gGraf_data_index],
             pCopy_areas[i],
             0,
@@ -207,6 +212,7 @@ int DoInterfaceScreen(tInterface_spec* pSpec, int pOptions, int pCurrent_choice)
 
 #if defined(DETHRACE_FIX_BUGS)
     mouse_down = 0;
+    gWs_menu_mode = 1;
 #endif
     entry_status = gProgram_state.prog_status;
     last_press = 0;
@@ -269,7 +275,9 @@ int DoInterfaceScreen(tInterface_spec* pSpec, int pOptions, int pCurrent_choice)
     ChangeSelection(pSpec, &last_choice, &gCurrent_choice, gCurrent_mode, 0);
     WaitForNoKeys();
     for (i = 0; i < pSpec->number_of_recopy_areas; i++) {
-        BrPixelmapRectangleCopy(copy_areas[i], 0, 0, gBack_screen, pSpec->recopy_areas[i].left[gGraf_data_index], pSpec->recopy_areas[i].top[gGraf_data_index],
+        BrPixelmapRectangleCopy(copy_areas[i], 0, 0, gBack_screen,
+            pSpec->recopy_areas[i].left[gGraf_data_index] + (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2,
+            pSpec->recopy_areas[i].top[gGraf_data_index],
             pSpec->recopy_areas[i].right[gGraf_data_index] - pSpec->recopy_areas[i].left[gGraf_data_index],
             pSpec->recopy_areas[i].bottom[gGraf_data_index] - pSpec->recopy_areas[i].top[gGraf_data_index]);
     }
@@ -405,6 +413,9 @@ int DoInterfaceScreen(tInterface_spec* pSpec, int pOptions, int pCurrent_choice)
         PDScreenBufferSwap(0);
         if (gMouse_in_use && !selection_changed) {
             GetMousePosition(&x_coord, &y_coord);
+#ifdef DETHRACE_FIX_BUGS
+            x_coord -= (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#endif
             new_mouse_down = EitherMouseButtonDown();
             mouse_down = new_mouse_down && !last_mouse_down;
             last_mouse_down = new_mouse_down;
@@ -572,6 +583,9 @@ int DoInterfaceScreen(tInterface_spec* pSpec, int pOptions, int pCurrent_choice)
     EndMouseCursor();
     UnlockInterfaceStuff();
     EdgeTriggerModeOff();
+#ifdef DETHRACE_FIX_BUGS
+    gWs_menu_mode = 0;
+#endif
     return result;
 }
 

@@ -268,7 +268,7 @@ tConcussion gConcussion;
 tClip_details gShadow_clip_planes[8];
 
 // GLOBAL: CARM95 0x0053e5f8
-br_actor* gLollipops[500];
+br_actor* gLollipops[1500];
 
 // GLOBAL: CARM95 0x0053f8d8
 tWobble_spec gWobble_array[5];
@@ -415,6 +415,8 @@ int gMap_render_x_i;
 
 // GLOBAL: CARM95 0x0054ff24
 int gX_offset;
+
+int gWs_menu_mode;
 
 // GLOBAL: CARM95 0x0054ff10
 int gMap_render_y_i;

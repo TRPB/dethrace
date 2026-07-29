@@ -360,6 +360,17 @@ void PDRevertPalette(void) {
 int PDInitScreenVars(int pArgc, char** pArgv) {
     gGraf_specs[gGraf_spec_index].phys_width = gGraf_specs[gGraf_spec_index].total_width;
     gGraf_specs[gGraf_spec_index].phys_height = gGraf_specs[gGraf_spec_index].total_height;
+#ifdef DETHRACE_FIX_BUGS
+    if (harness_game_config.opengl_3dfx_mode
+            && harness_game_config.screen_width > 0
+            && harness_game_config.screen_height > 0) {
+        float target_ar = (float)harness_game_config.screen_width / harness_game_config.screen_height;
+        if (target_ar > 4.0f / 3.0f + 0.01f) {
+            int new_w = (int)(gGraf_specs[gGraf_spec_index].phys_height * target_ar + 0.5f);
+            gGraf_specs[gGraf_spec_index].phys_width = (new_w + 3) & ~3;
+        }
+    }
+#endif
     return 1;
 }
 
@@ -554,10 +565,17 @@ void ReallyCopyBackScreen(int pRendering_area_only, int pClear_top_and_bottom) {
     if (pRendering_area_only) {
         BrPixelmapRectangleCopy(gScreen, gX_offset, gY_offset, gRender_screen, 0, 0, gWidth, gHeight);
     } else if (gReal_graf_data_index != gGraf_data_index) {
-        BrPixelmapRectangleFill(gReal_back_screen, 0, 0, 640, 40, 0);
-        BrPixelmapRectangleFill(gReal_back_screen, 0, 440, 640, 40, 0);
+        BrPixelmapRectangleFill(gReal_back_screen, 0, 0, gReal_back_screen->width, 40, 0);
+        BrPixelmapRectangleFill(gReal_back_screen, 0, 440, gReal_back_screen->width, 40, 0);
         if (gReal_back_screen->type == BR_PMT_RGB_565) {
+#ifdef DETHRACE_FIX_BUGS
+            int ws_x = (gReal_back_screen->width - 640) / 2;
+            br_pixelmap dst_shifted = *gReal_back_screen;
+            dst_shifted.pixels = (tU8*)gReal_back_screen->pixels + ws_x * sizeof(tU16);
+            Double8BitTo16BitPixelmap(&dst_shifted, gBack_screen, gCurrent_palette, 40, 320, 200);
+#else
             Double8BitTo16BitPixelmap(gReal_back_screen, gBack_screen, gCurrent_palette, 40, 320, 200);
+#endif
         } else {
             DRPixelmapDoubledCopy(gReal_back_screen, gBack_screen, 320, 200, 0, 40);
         }
@@ -720,7 +738,14 @@ void PDGetMousePosition(int* pX_coord, int* pY_coord) {
         // DOSMouseRead(&mouse_x, &mouse_y, &mouse_buttons);
         gHarness_platform.GetMousePosition(&mouse_x, &mouse_y);
 
+#ifdef DETHRACE_FIX_BUGS
+        {
+            int ws_x_off = (gGraf_specs[gReal_graf_data_index].phys_width - gGraf_data[gReal_graf_data_index].width) / 2;
+            delta_x = gGraf_data[gGraf_data_index].width * (mouse_x - ws_x_off) / gGraf_data[gReal_graf_data_index].width - gMouse_last_x_coord;
+        }
+#else
         delta_x = gGraf_data[gGraf_data_index].width * mouse_x / gGraf_data[gReal_graf_data_index].width - gMouse_last_x_coord;
+#endif
         delta_y = gGraf_data[gGraf_data_index].height * mouse_y / gGraf_data[gReal_graf_data_index].height - gMouse_last_y_coord;
 
         mouse_x2 = (double)delta_x * MOUSE_SPEED_MULTIPLIER;

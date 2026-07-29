@@ -36,7 +36,7 @@ extern int gMap_colours[4];
 extern br_vector3 gShadow_points[8];
 extern tConcussion gConcussion;
 extern tClip_details gShadow_clip_planes[8];
-extern br_actor* gLollipops[500];
+extern br_actor* gLollipops[1500];
 extern tWobble_spec gWobble_array[5];
 extern tSaved_table gSaved_shade_tables[100];
 extern tCursor_giblet gCursor_giblets[45];
@@ -86,6 +86,7 @@ extern int gMouse_last_x_coord;
 extern br_scalar gAmbient_adjustment;
 extern int gMap_render_x_i;
 extern int gX_offset;
+extern int gWs_menu_mode;
 extern int gMap_render_y_i;
 extern int gMirror_on__graphics; // suffix added to avoid duplicate symbol
 extern br_scalar gYon_squared;

@@ -1573,14 +1573,21 @@ void SwapScreen(void) {
 // IDA: void __usercall ShowFlic(int pIndex@<EAX>)
 // FUNCTION: CARM95 0x004973a3
 void ShowFlic(int pIndex) {
+    int flic_x = gMain_flic_list[pIndex].x_offset;
+    int flic_y = gMain_flic_list[pIndex].y_offset;
+#ifdef DETHRACE_FIX_BUGS
+    if (gWs_menu_mode) {
+        flic_x += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+    }
+#endif
     do {
         PlayFlic(
             pIndex,
             gMain_flic_list[pIndex].the_size,
             gMain_flic_list[pIndex].data_ptr,
             gBack_screen,
-            gMain_flic_list[pIndex].x_offset,
-            gMain_flic_list[pIndex].y_offset,
+            flic_x,
+            flic_y,
             SwapScreen,
             gMain_flic_list[pIndex].interruptable,
             gMain_flic_list[pIndex].frame_rate);
@@ -1904,16 +1911,25 @@ void AddToFlicQueue(int pIndex, int pX, int pY, int pMust_finish) {
     new_flic->must_finish = pMust_finish;
     new_flic->data_start = NULL;
 
-    StartFlic(
-        gMain_flic_list[pIndex].file_name,
-        pIndex,
-        new_flic,
-        gMain_flic_list[pIndex].the_size,
-        gMain_flic_list[pIndex].data_ptr,
-        gBack_screen,
-        pX >= 0 ? pX : gMain_flic_list[pIndex].x_offset,
-        pY >= 0 ? pY : gMain_flic_list[pIndex].y_offset,
-        20);
+    {
+        int flic_x = pX >= 0 ? pX : gMain_flic_list[pIndex].x_offset;
+        int flic_y = pY >= 0 ? pY : gMain_flic_list[pIndex].y_offset;
+#ifdef DETHRACE_FIX_BUGS
+        if (gWs_menu_mode) {
+            flic_x += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        }
+#endif
+        StartFlic(
+            gMain_flic_list[pIndex].file_name,
+            pIndex,
+            new_flic,
+            gMain_flic_list[pIndex].the_size,
+            gMain_flic_list[pIndex].data_ptr,
+            gBack_screen,
+            flic_x,
+            flic_y,
+            20);
+    }
 }
 
 // IDA: void __usercall InitialiseFlicPanel(int pIndex@<EAX>, int pLeft@<EDX>, int pTop@<EBX>, int pWidth@<ECX>, int pHeight)
@@ -1922,6 +1938,11 @@ void InitialiseFlicPanel(int pIndex, int pLeft, int pTop, int pWidth, int pHeigh
     void* the_pixels;
 
     gPanel_flic[pIndex].data = NULL;
+#ifdef DETHRACE_FIX_BUGS
+    if (gWs_menu_mode) {
+        pLeft += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+    }
+#endif
     gPanel_flic_left[pIndex] = pLeft;
     gPanel_flic_top[pIndex] = pTop;
     the_pixels = BrMemAllocate(pHeight * ((pWidth + 3) & ~3), kFlic_panel_pixels);

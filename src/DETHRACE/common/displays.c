@@ -363,14 +363,26 @@ void DimRectangle(br_pixelmap* pPixelmap, int pLeft, int pTop, int pRight, int p
 // FUNCTION: CARM95 0x004c479c
 void DimAFewBits(void) {
     int i;
+    int cockpit_index = gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 ? 1 : 0;
 
-    for (i = 0; i < gProgram_state.current_car.dim_count[gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 ? 1 : 0]; i++) {
+    for (i = 0; i < gProgram_state.current_car.dim_count[cockpit_index]; i++) {
+        int left = gProgram_state.current_car.dim_left[cockpit_index][i];
+        int right = gProgram_state.current_car.dim_right[cockpit_index][i];
+#ifdef DETHRACE_FIX_BUGS
+        {
+            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            if (ws_offset > 0 && left > gGraf_specs[gGraf_spec_index].total_width / 2) {
+                left += ws_offset;
+                right += ws_offset;
+            }
+        }
+#endif
         DimRectangle(
             gBack_screen,
-            gProgram_state.current_car.dim_left[gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 ? 1 : 0][i],
-            gProgram_state.current_car.dim_top[gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 ? 1 : 0][i],
-            gProgram_state.current_car.dim_right[gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 ? 1 : 0][i],
-            gProgram_state.current_car.dim_bottom[gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 ? 1 : 0][i],
+            left,
+            gProgram_state.current_car.dim_top[cockpit_index][i],
+            right,
+            gProgram_state.current_car.dim_bottom[cockpit_index][i],
             1);
     }
 }
@@ -393,6 +405,11 @@ void DubreyBar(int pX_index, int pY, int pColour) {
     int x;
 
     x = gCurrent_graf_data->ps_bar_left - gCurrent_graf_data->ps_x_pitch * pX_index;
+#ifdef DETHRACE_FIX_BUGS
+    if (gCurrent_graf_data->ps_bar_left > gGraf_specs[gGraf_spec_index].total_width / 2) {
+        x += gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+    }
+#endif
     BrPixelmapLine(gBack_screen, x, pY, x, gCurrent_graf_data->ps_bar_height + pY, pColour);
 }
 
@@ -408,8 +425,17 @@ void DoPSPowerHeadup(int pY, int pLevel, char* pName, int pBar_colour) {
     }
 #endif
 
+#ifdef DETHRACE_FIX_BUGS
+    {
+        int ps_ws_x = (gCurrent_graf_data->ps_dim_left > gGraf_specs[gGraf_spec_index].total_width / 2)
+            ? gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width : 0;
+        DimRectangle(gBack_screen, gCurrent_graf_data->ps_dim_left + ps_ws_x, pY, gCurrent_graf_data->ps_dim_right + ps_ws_x, gCurrent_graf_data->ps_dim_height + pY, 1);
+        TransDRPixelmapText(gBack_screen, gCurrent_graf_data->ps_name_left + ps_ws_x, gCurrent_graf_data->ps_name_top_border + pY, gFonts + 6, pName, gBack_screen->width);
+    }
+#else
     DimRectangle(gBack_screen, gCurrent_graf_data->ps_dim_left, pY, gCurrent_graf_data->ps_dim_right, gCurrent_graf_data->ps_dim_height + pY, 1);
     TransDRPixelmapText(gBack_screen, gCurrent_graf_data->ps_name_left, gCurrent_graf_data->ps_name_top_border + pY, gFonts + 6, pName, gBack_screen->width);
+#endif
 
     pLevel = gCurrent_graf_data->ps_bars_per_level * pLevel;
     pY += gCurrent_graf_data->ps_bar_top_border;
@@ -881,6 +907,30 @@ int NewTextHeadupSlot2(int pSlot_index, int pFlash_rate, int pLifetime, int pFon
             the_headup->dim_right = headup_slot->dim_right;
             the_headup->dim_bottom = headup_slot->dim_bottom;
             the_headup->original_x = headup_slot->x;
+#ifdef DETHRACE_FIX_BUGS
+            {
+                int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+                int x_shift = 0;
+                if (ws_offset > 0) {
+                    if (pSlot_index == eHeadupSlot_timer
+                        || pSlot_index == eHeadupSlot_misc
+                        || pSlot_index == eHeadupSlot_time_award
+                        || pSlot_index == eHeadupSlot_time_bonus
+                        || pSlot_index == eHeadupSlot_race_bonus) {
+                        x_shift = ws_offset / 2;
+                    } else if (the_headup->original_x > gGraf_specs[gGraf_spec_index].total_width / 2
+                               || pSlot_index == eHeadupSlot_credits
+                               || pSlot_index == eHeadupSlot_ped_kills) {
+                        x_shift = ws_offset;
+                    }
+                }
+                the_headup->original_x += x_shift;
+                if (the_headup->dimmed_background) {
+                    the_headup->dim_left += x_shift;
+                    the_headup->dim_right += x_shift;
+                }
+            }
+#endif
             the_headup->right_edge = MungeHeadupWidth(the_headup) + the_headup->x;
             the_headup->y = headup_slot->y;
             if (pFlash_rate) {
@@ -932,7 +982,24 @@ int NewImageHeadupSlot(int pSlot_index, int pFlash_rate, int pLifetime, int pIma
         the_headup->dim_right = headup_slot->dim_right;
         the_headup->dim_bottom = headup_slot->dim_bottom;
         the_headup->original_x = headup_slot->x;
-
+#ifdef DETHRACE_FIX_BUGS
+        {
+            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            int x_shift = 0;
+            if (ws_offset > 0) {
+                if (pSlot_index == eHeadupSlot_fancies) {
+                    x_shift = ws_offset / 2;
+                } else if (the_headup->original_x > gGraf_specs[gGraf_spec_index].total_width / 2) {
+                    x_shift = ws_offset;
+                }
+            }
+            the_headup->original_x += x_shift;
+            if (the_headup->dimmed_background) {
+                the_headup->dim_left += x_shift;
+                the_headup->dim_right += x_shift;
+            }
+        }
+#endif
         switch (headup_slot->justification) {
         case 0:
             the_headup->x = the_headup->original_x;
@@ -1084,6 +1151,7 @@ void DoDamageScreen(tU32 pThe_time) {
     int the_step;
     int the_wobble_x;
     int the_wobble_y;
+    int damage_background_x;
     br_pixelmap* the_image;
     tDamage_unit* the_damage;
 
@@ -1099,13 +1167,26 @@ void DoDamageScreen(tU32 pThe_time) {
         }
         the_wobble_x = gScreen_wobble_x;
         the_wobble_y = gScreen_wobble_y;
+        damage_background_x = gProgram_state.current_car.damage_background_x;
     } else {
         the_wobble_x = gProgram_state.current_car.damage_x_offset;
         the_wobble_y = gProgram_state.current_car.damage_y_offset;
+        damage_background_x = gProgram_state.current_car.damage_background_x;
+#ifdef DETHRACE_FIX_BUGS
+        {
+            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            if (ws_offset > 0) {
+                the_wobble_x += ws_offset;
+                if (damage_background_x > gGraf_specs[gGraf_spec_index].total_width / 2) {
+                    damage_background_x += ws_offset;
+                }
+            }
+        }
+#endif
         if (gProgram_state.current_car.damage_background != NULL) {
             DRPixelmapRectangleMaskedCopy(
                 gBack_screen,
-                gProgram_state.current_car.damage_background_x,
+                damage_background_x,
                 gProgram_state.current_car.damage_background_y,
                 gProgram_state.current_car.damage_background,
                 0,

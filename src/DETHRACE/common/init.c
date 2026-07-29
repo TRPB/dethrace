@@ -272,9 +272,9 @@ void ReinitialiseRenderStuff(void) {
 #ifdef DETHRACE_3DFX_PATCH
         if (gSmall_frames_are_slow) {
             gProgram_state.current_render_top = 0;
-            gProgram_state.current_render_right = gGraf_specs[gGraf_spec_index].total_width;
+            gProgram_state.current_render_right = gGraf_specs[gGraf_spec_index].phys_width;
             gProgram_state.current_render_left = 0;
-            gProgram_state.current_render_bottom = gGraf_specs[gGraf_spec_index].total_height;
+            gProgram_state.current_render_bottom = gGraf_specs[gGraf_spec_index].phys_height;
             return;
         }
 #endif
