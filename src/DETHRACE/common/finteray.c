@@ -450,7 +450,15 @@ void CheckSingleFace(tFace_ref* pFace, br_vector3* ray_pos, br_vector3* ray_dir,
 
     d = pFace->normal.v[1] * ray_dir->v[1] + ray_dir->v[2] * pFace->normal.v[2] + ray_dir->v[0] * pFace->normal.v[0];
     if (this_material != NULL && (this_material->flags & (BR_MATF_TWO_SIDED | BR_MATF_ALWAYS_VISIBLE)) == 0 && d > 0.0f) {
+#ifdef DETHRACE_FIX_BUGS
+        // When gPling_materials=0, we specifically want to hit pling (water) faces.
+        // Treat them as two-sided so backface culling doesn't prevent upward-ray detection.
+        if (this_material->identifier == NULL || *this_material->identifier != '!' || gPling_materials != 0) {
+            return;
+        }
+#else
         return;
+#endif
     }
     if (this_material != NULL && this_material->identifier != NULL && *this_material->identifier == '!' && gPling_materials) {
         return;
