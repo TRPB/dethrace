@@ -567,6 +567,9 @@ void BuildWrecks(void) {
     int car_count;
     br_actor* this_car;
     tCar_spec* the_car;
+#ifdef DETHRACE_FIX_BUGS
+    int ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#endif
 
     gWreck_count = 0;
     position = 0;
@@ -615,7 +618,11 @@ void BuildWrecks(void) {
 #endif
         gWreck_render_area = BrPixelmapAllocateSub(
             gBack_screen,
+#ifdef DETHRACE_FIX_BUGS
+            gCurrent_graf_data->wreck_render_x + ws_x,
+#else
             gCurrent_graf_data->wreck_render_x,
+#endif
             gCurrent_graf_data->wreck_render_y,
             gCurrent_graf_data->wreck_render_w,
             gCurrent_graf_data->wreck_render_h);
@@ -637,7 +644,11 @@ void BuildWrecks(void) {
 #endif
         gWreck_z_buffer = BrPixelmapAllocateSub(
             gDepth_buffer,
+#ifdef DETHRACE_FIX_BUGS
+            gCurrent_graf_data->wreck_render_x + ws_x,
+#else
             gCurrent_graf_data->wreck_render_x,
+#endif
             gCurrent_graf_data->wreck_render_y,
             gCurrent_graf_data->wreck_render_w,
             gCurrent_graf_data->wreck_render_h);
@@ -852,6 +863,9 @@ void DamageScrnDraw(int pCurrent_choice, int pCurrent_mode) {
     float spacing;
     br_actor* sel_actor;
     char* name;
+#ifdef DETHRACE_FIX_BUGS
+    int ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#endif
 
     if (((pCurrent_choice == 0 && pCurrent_mode == 0) || !gDone_initial) && (gWreck_zoomed_in < 0 && gWreck_selected >= 0)) {
         sel_actor = BrActorAllocate(BR_ACTOR_MODEL, NULL);
@@ -930,7 +944,11 @@ void DamageScrnDraw(int pCurrent_choice, int pCurrent_mode) {
             BrActorFree(sel_actor);
         }
         BrPixelmapRectangleFill(gBack_screen,
+#ifdef DETHRACE_FIX_BUGS
+            gCurrent_graf_data->wreck_name_left + ws_x,
+#else
             gCurrent_graf_data->wreck_name_left,
+#endif
             gCurrent_graf_data->wreck_name_top,
             gCurrent_graf_data->wreck_name_right - gCurrent_graf_data->wreck_name_left,
             gCurrent_graf_data->wreck_name_bottom - gCurrent_graf_data->wreck_name_top,
@@ -939,7 +957,11 @@ void DamageScrnDraw(int pCurrent_choice, int pCurrent_mode) {
             name = GetDriverName(gWreck_array[gWreck_selected].car_type,
                 gWreck_array[gWreck_selected].car_index);
             TransBrPixelmapText(gBack_screen,
+#ifdef DETHRACE_FIX_BUGS
+                (gCurrent_graf_data->wreck_name_left + gCurrent_graf_data->wreck_name_right + 2 * ws_x - BrPixelmapTextWidth(gBack_screen, gFont_7, name)) / 2,
+#else
                 (gCurrent_graf_data->wreck_name_left + gCurrent_graf_data->wreck_name_right - BrPixelmapTextWidth(gBack_screen, gFont_7, name)) / 2,
+#endif
                 gCurrent_graf_data->wreck_name_base_line,
                 84,
                 gFont_7,
