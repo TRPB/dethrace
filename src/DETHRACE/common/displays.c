@@ -991,7 +991,7 @@ int NewImageHeadupSlot(int pSlot_index, int pFlash_rate, int pLifetime, int pIma
             if (ws_offset > 0) {
                 if (the_headup->cockpit_anchored) {
                     x_shift = ws_offset / 2;
-                } else if (pSlot_index == eHeadupSlot_fancies) {
+                } else if (pSlot_index == eHeadupSlot_fancies || pSlot_index == eHeadupSlot_countdown) {
                     x_shift = ws_offset / 2;
                 } else if (the_headup->original_x > gGraf_specs[gGraf_spec_index].total_width / 2) {
                     x_shift = ws_offset;
