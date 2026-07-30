@@ -1209,6 +1209,24 @@ void InterpolateCars(tU32 pLast_frame_time, tU32 pTime) {
         if (car == gCar_to_view && car->driver > eDriver_non_car && gCamera_smooth_look_valid && !gProgram_state.cockpit_on) {
             br_scalar delta = gCamera_aim_y - car->pos.v[1];
             if (delta > -0.5f && delta < 0.5f) {
+                if (delta < 0.0f && car->ride_height > 0.0f) {
+                    // When landing from a fall the suspension compresses, dropping oldd
+                    // toward 0. Scale back any downward nudge proportionally so the
+                    // render matrix can't compound suspension compression into a
+                    // body-through-road clip. headroom = 1 at normal ride, 0 when fully
+                    // compressed; upward nudges (delta > 0) are not affected.
+                    int j;
+                    br_scalar min_oldd = car->oldd[0];
+                    for (j = 1; j < 4; j++) {
+                        if (car->oldd[j] < min_oldd) {
+                            min_oldd = car->oldd[j];
+                        }
+                    }
+                    br_scalar headroom = min_oldd / car->ride_height;
+                    if (headroom < 0.0f) headroom = 0.0f;
+                    if (headroom > 1.0f) headroom = 1.0f;
+                    delta *= headroom;
+                }
                 car->car_master_actor->t.t.mat.m[3][1] += delta * WORLD_SCALE;
             }
         }
@@ -6176,6 +6194,9 @@ void InitialiseExternalCamera(void) {
         c = &gProgram_state.current_car;
     }
     gCamera_height = c->pos.v[1];
+#ifdef DETHRACE_FIX_BUGS
+    gCamera_smooth_look_valid = 0;
+#endif
     BrVector3Set(&gView_direction, c->direction.v[0], 0.0f, c->direction.v[2]);
     BrVector3Normalise(&gView_direction, &gView_direction);
     ts = -BrVector3Dot(&gView_direction, (br_vector3*)c->car_master_actor->t.t.mat.m[2]);
