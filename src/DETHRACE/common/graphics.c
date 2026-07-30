@@ -418,6 +418,10 @@ int gX_offset;
 
 int gWs_menu_mode;
 
+#ifdef DETHRACE_FIX_BUGS
+static int gMap_ws_x;
+#endif
+
 // GLOBAL: CARM95 0x0054ff10
 int gMap_render_y_i;
 
@@ -1237,6 +1241,9 @@ void DrawMapBlip(tCar_spec* pCar, tU32 pTime, br_matrix34* pTrans, br_vector3* p
         map_pos.v[0] = map_pos.v[0] * 2.f;
         map_pos.v[1] = map_pos.v[1] * 2.f + HIRES_Y_OFFSET;
     }
+#ifdef DETHRACE_FIX_BUGS
+    map_pos.v[0] += gMap_ws_x;
+#endif
     period = 256; // Must be power of 2
     colours[0] = pColour;
     colours[1] = OppositeColour(pColour);
@@ -1333,6 +1340,9 @@ void DrawMapSmallBlip(tU32 pTime, br_vector3* pPos, int pColour) {
         map_pos.v[0] = 2.f * map_pos.v[0];
         map_pos.v[1] = 2.f * map_pos.v[1] + HIRES_Y_OFFSET;
     }
+#ifdef DETHRACE_FIX_BUGS
+    map_pos.v[0] += gMap_ws_x;
+#endif
 #ifdef DETHRACE_3DFX_PATCH
     if (gBack_screen->type == BR_PMT_RGB_565) {
         offset = ((int)map_pos.v[0] * 2) + gBack_screen->row_bytes * (int)map_pos.v[1];
@@ -1820,16 +1830,32 @@ void FlashyMapCheckpoint(int pIndex, tU32 pTime) {
             cp = &gCurrent_race.checkpoints[pIndex];
             if (gGraf_data_index != 0) {
                 DimRectangle(gBack_screen,
+#ifdef DETHRACE_FIX_BUGS
+                    2 * cp->map_left[0] + gMap_ws_x,
+#else
                     2 * cp->map_left[0],
+#endif
                     2 * cp->map_top[0] + HIRES_Y_OFFSET,
+#ifdef DETHRACE_FIX_BUGS
+                    2 * cp->map_right[0] + gMap_ws_x,
+#else
                     2 * cp->map_right[0],
+#endif
                     2 * cp->map_bottom[0] + HIRES_Y_OFFSET,
                     0);
             } else {
                 DimRectangle(gBack_screen,
+#ifdef DETHRACE_FIX_BUGS
+                    cp->map_left[0] + gMap_ws_x,
+#else
                     cp->map_left[0],
+#endif
                     cp->map_top[0],
+#ifdef DETHRACE_FIX_BUGS
+                    cp->map_right[0] + gMap_ws_x,
+#else
                     cp->map_right[0],
+#endif
                     cp->map_bottom[0],
                     0);
             }
@@ -1917,6 +1943,9 @@ void RenderAFrame(int pDepth_mask_on) {
         gBack_screen->origin_y = 0;
         gBack_screen->base_x = 0;
         gBack_screen->base_y = 0;
+#ifdef DETHRACE_FIX_BUGS
+        gMap_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+#endif
         if (gCurrent_race.map_image != NULL) {
             if (gReal_graf_data_index) {
                 BrPixelmapRectangleFill(gBack_screen, 0, 0, 640, 40, 0);
@@ -1927,10 +1956,24 @@ void RenderAFrame(int pDepth_mask_on) {
                     gCurrent_race.map_image,
                     gCurrent_race.map_image->width,
                     gCurrent_race.map_image->height,
+#ifdef DETHRACE_FIX_BUGS
+                    gMap_ws_x,
+#else
                     0,
+#endif
                     40);
             } else {
+#ifdef DETHRACE_FIX_BUGS
+                if (gMap_ws_x > 0) {
+                    BrPixelmapRectangleFill(gBack_screen, 0, 0, gMap_ws_x, gBack_screen->height, 0);
+                    BrPixelmapRectangleCopy(gBack_screen, gMap_ws_x, 0, gCurrent_race.map_image, 0, 0, gCurrent_race.map_image->width, gCurrent_race.map_image->height);
+                    BrPixelmapRectangleFill(gBack_screen, gMap_ws_x + gCurrent_race.map_image->width, 0, gMap_ws_x, gBack_screen->height, 0);
+                } else {
+                    DRPixelmapCopy(gBack_screen, gCurrent_race.map_image);
+                }
+#else
                 DRPixelmapCopy(gBack_screen, gCurrent_race.map_image);
+#endif
             }
         }
 
@@ -2156,6 +2199,9 @@ void RenderAFrame(int pDepth_mask_on) {
             GetTimerString(the_text, 0);
             map_timer_width = DRTextWidth(&gFonts[kFont_BLUEHEAD], the_text);
             map_timer_x = gCurrent_graf_data->map_timer_text_x - map_timer_width;
+#ifdef DETHRACE_FIX_BUGS
+            map_timer_x += gMap_ws_x;
+#endif
             BrPixelmapRectangleFill(
                 gBack_screen,
                 map_timer_x - gCurrent_graf_data->map_timer_border_x,
@@ -3612,7 +3658,7 @@ void DRPixelmapDoubledCopy(br_pixelmap* pDestn, br_pixelmap* pSource, int pSourc
     dst_row_skip = 2 * pDestn->row_bytes - 2 * pSource_width;
     src_row_skip = (pSource->row_bytes - pSource_width) / 2;
     sptr = (tU16*)((tU8*)pSource->pixels + 2 * (pSource->row_bytes * pSource_height / 2) - 2 * src_row_skip);
-    dptr = (tU8*)pDestn->pixels + (2 * pSource_height + pY_offset) * pDestn->row_bytes - pDestn->row_bytes + 2 * pSource_width;
+    dptr = (tU8*)pDestn->pixels + (2 * pSource_height + pY_offset) * pDestn->row_bytes - pDestn->row_bytes + pX_offset + 2 * pSource_width;
     dptr2 = dptr - pDestn->row_bytes;
     width_over_2 = pSource_width / 2;
     for (i = 0; i < pSource_height; i++) {
