@@ -1525,6 +1525,16 @@ void ProcessShadow(tCar_spec* pCar, br_actor* pWorld, tTrack_spec* pTrack_spec, 
     gShadow_points[7].v[2] = bounds_z_max;
     gShadow_clip_plane_count = 0;
     BrMatrix34TApplyV(&light_ray_car, &gShadow_light_ray, &pCar->car_master_actor->t.t.mat);
+#ifdef DETHRACE_FIX_BUGS
+    // Snap near-zero components to zero. TryThisEdge decides whether to create a
+    // clip plane by checking the sign of these components; if any oscillates across
+    // zero (e.g. from physics noise in the car matrix pitch/roll), the plane is
+    // created on some frames and skipped on others, causing the shadow to visibly
+    // expand and contract. Snapping makes the sign check deterministic.
+    if (light_ray_car.v[0] > -0.01f && light_ray_car.v[0] < 0.01f) light_ray_car.v[0] = 0.0f;
+    if (light_ray_car.v[1] > -0.01f && light_ray_car.v[1] < 0.01f) light_ray_car.v[1] = 0.0f;
+    if (light_ray_car.v[2] > -0.01f && light_ray_car.v[2] < 0.01f) light_ray_car.v[2] = 0.0f;
+#endif
     y_offset = (bounds_y_max + bounds_y_min) / 2.0;
     TryThisEdge(pCar, &light_ray_car, 2, 1.0, 1, 1.0, 0, 3, y_offset);
     TryThisEdge(pCar, &light_ray_car, 2, -1.0, 1, 1.0, 1, 2, y_offset);
@@ -1546,6 +1556,7 @@ void ProcessShadow(tCar_spec* pCar, br_actor* pWorld, tTrack_spec* pTrack_spec, 
     if (!gAction_replay_mode && pCar->number_of_wheels_on_ground >= 3 && face_count != 0) {
         highest_underneath = 0.0;
     } else {
+
         kev_bounds.original_bounds.min.v[0] = 1000.0;
         kev_bounds.original_bounds.min.v[1] = 1000.0;
         kev_bounds.original_bounds.min.v[2] = 1000.0;
@@ -1676,7 +1687,14 @@ void ProcessShadow(tCar_spec* pCar, br_actor* pWorld, tTrack_spec* pTrack_spec, 
                 highest_underneath = 0.0;
             }
         } else {
+#ifdef DETHRACE_FIX_BUGS
+            // CheckSingleFace missed the road (ray origin below/at surface due to
+            // engine vibration). Treat as on-ground to prevent clip planes from
+            // contracting dramatically and making the shadow shrink or disappear.
+            highest_underneath = 0.0;
+#else
             highest_underneath = 2.2;
+#endif
         }
         if (gFancy_shadow) {
             gShadow_dim_amount = ((2.2 - highest_underneath) * 5.0 / 2.2 + 2.5);
@@ -1688,6 +1706,17 @@ void ProcessShadow(tCar_spec* pCar, br_actor* pWorld, tTrack_spec* pTrack_spec, 
             }
         }
         shadow_scaling_factor = (2.2 - highest_underneath) * 0.52 / 2.2 + 0.4;
+#ifdef DETHRACE_FIX_BUGS
+        // When the gFace_list__car circular buffer wraps, the fast path (which sets
+        // highest_underneath=0 → sf=0.92) is bypassed in favour of the fallback ray
+        // cast. The fallback subtracts bounds_y in game units from highest_underneath
+        // in world units, leaving a residual ~H*0.85 that drives sf down to ~0.52 and
+        // makes the shadow contract by ~40% every ~0.5-1 s. Force sf=0.92 whenever
+        // wheels are on the ground to match the fast-path result.
+        if (!gAction_replay_mode && pCar->number_of_wheels_on_ground >= 3) {
+            shadow_scaling_factor = 0.92f;
+        }
+#endif
         for (i = 0; i < gShadow_clip_plane_count; i++) {
             clip_normal = (br_vector4*)gShadow_clip_planes[i].clip->type_data;
             distance = DistanceFromPlane(&pCar->car_master_actor->t.t.euler.t, clip_normal->v[0], clip_normal->v[1], clip_normal->v[2], clip_normal->v[3]);
