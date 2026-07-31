@@ -568,7 +568,7 @@ void BuildWrecks(void) {
     br_actor* this_car;
     tCar_spec* the_car;
 #ifdef DETHRACE_FIX_BUGS
-    int ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+    int ws_x = (gGraf_specs[gReal_graf_data_index].phys_width - gGraf_specs[gReal_graf_data_index].total_width) / 2;
 #endif
 
     gWreck_count = 0;
@@ -630,7 +630,11 @@ void BuildWrecks(void) {
     } else {
         gWreck_render_area = BrPixelmapAllocateSub(
             gReal_back_screen,
+#ifdef DETHRACE_FIX_BUGS
+            gCurrent_graf_data->wreck_render_x * 2 + ws_x,
+#else
             gCurrent_graf_data->wreck_render_x * 2,
+#endif
             gCurrent_graf_data->wreck_render_y * 2 + HIRES_Y_OFFSET,
             gCurrent_graf_data->wreck_render_w * 2,
             gCurrent_graf_data->wreck_render_h * 2);
