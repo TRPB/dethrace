@@ -995,6 +995,26 @@ void DamageScrnDraw(int pCurrent_choice, int pCurrent_mode) {
                 gCurrent_graf_data->wreck_render_h + gCurrent_graf_data->wreck_render_y,
                 8);
         }
+#ifdef DETHRACE_FIX_BUGS
+        if (sel_actor != NULL) {
+            // glrend doesn't support BR_RSTYLE_BOUNDING_EDGES (BRT_LINE immediate mode);
+            // draw a 2D selection box on gBack_screen instead.
+            // Camera params fixed in BuildWrecks: FOV=55°, aspect=2, z=2.2
+            float z_dist = gWreck_camera->t.t.translate.t.v[2];
+            float scale = 1.f / 0.5206f; // 1/tan(27.5°)
+            float xscale = scale / (2.f * z_dist);
+            float yscale = scale / z_dist;
+            int rw = gCurrent_graf_data->wreck_render_w;
+            int rh = gCurrent_graf_data->wreck_render_h;
+            int box_cx = gCurrent_graf_data->wreck_render_x + rw / 2;
+            int box_cy = gCurrent_graf_data->wreck_render_y + rh / 2;
+            int sel_x = box_cx + (int)(gWreck_array[gWreck_selected].pos_x * 1.5f * xscale * (rw / 2.f));
+            int sel_y = box_cy + (int)(gWreck_array[gWreck_selected].pos_y * 1.2f * yscale * (rh / 2.f));
+            int hw = (int)(0.47f * xscale * (rw / 2.f)) + 3;
+            int hh = (int)(0.47f * yscale * (rh / 2.f)) + 3;
+            DrawRectangle(gBack_screen, sel_x - hw, sel_y - hh, sel_x + hw, sel_y + hh, 45);
+        }
+#endif
         if (sel_actor) {
             BrActorRemove(sel_actor);
             sel_actor->model = NULL;
@@ -1030,6 +1050,9 @@ void DamageScrnDraw(int pCurrent_choice, int pCurrent_mode) {
         BrZbSceneRenderAdd(gWreck_root);
         BrZbSceneRenderEnd();
         PDLockRealBackScreen(1);
+#ifdef DETHRACE_FIX_BUGS
+        BrPixelmapRectangleFill(gBack_screen, gCurrent_graf_data->wreck_render_x, gCurrent_graf_data->wreck_render_y, gCurrent_graf_data->wreck_render_w, gCurrent_graf_data->wreck_render_h, 0);
+#endif
     }
 #endif
 }

@@ -548,6 +548,38 @@ void Double8BitTo16BitPixelmap(br_pixelmap* pDst, br_pixelmap* pSrc, br_pixelmap
     }
 }
 
+#ifdef DETHRACE_FIX_BUGS
+static void Double8BitTo16BitPixelmapMasked(br_pixelmap* pDst, br_pixelmap* pSrc, br_pixelmap* pPalette, tU16 pOff, tU16 pSrc_width, tU16 pSrc_height) {
+    int x;
+    int y;
+    tU8* src;
+    tU16* dst0;
+    tU16* dst1;
+    tU8 pixel;
+    tU16 sixteen;
+    tU16* palette_entry;
+    int dst_y = 0;
+
+    palette_entry = PaletteOf16Bits(pPalette)->pixels;
+    for (y = 0; y < pSrc_height; y++) {
+        src = (tU8*)pSrc->pixels + pSrc->row_bytes * y;
+        dst0 = (tU16*)((tU8*)pDst->pixels + pDst->row_bytes * (dst_y + pOff));
+        dst1 = (tU16*)((tU8*)pDst->pixels + pDst->row_bytes * (dst_y + pOff + 1));
+        for (x = 0; x < pSrc_width; x++) {
+            pixel = src[x];
+            if (pixel != 0) {
+                sixteen = palette_entry[pixel];
+                dst0[x * 2] = sixteen;
+                dst0[x * 2 + 1] = sixteen;
+                dst1[x * 2] = sixteen;
+                dst1[x * 2 + 1] = sixteen;
+            }
+        }
+        dst_y += 2;
+    }
+}
+#endif
+
 // IDA: br_pixelmap* __cdecl PDInterfacePixelmap()
 br_pixelmap* PDInterfacePixelmap(void) {
     NOT_IMPLEMENTED();
@@ -596,6 +628,13 @@ void PDScreenBufferSwap(int pRendering_area_only) {
     }
     if (!gAlready_copied) {
         ReallyCopyBackScreen(pRendering_area_only, 0);
+#ifdef DETHRACE_FIX_BUGS
+    } else if (gReal_graf_data_index != gGraf_data_index && gReal_back_screen->type == BR_PMT_RGB_565) {
+        int ws_x = (gReal_back_screen->width - 640) / 2;
+        br_pixelmap dst_shifted = *gReal_back_screen;
+        dst_shifted.pixels = (tU8*)gReal_back_screen->pixels + ws_x * sizeof(tU16);
+        Double8BitTo16BitPixelmapMasked(&dst_shifted, gBack_screen, gCurrent_palette, 40, 320, 200);
+#endif
     }
     gAlready_copied = 0;
     if (!pRendering_area_only) {
