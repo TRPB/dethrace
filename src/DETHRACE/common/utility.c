@@ -1727,13 +1727,6 @@ void GlorifyMaterial(br_material** pArray, int pCount) {
             if (gPerspective_is_fast) {
                 pArray[i]->flags |= BR_MATF_PERSPECTIVE;
             }
-            if (e && (e->flags & ExceptionFlag_Double)) {
-                pArray[i]->map_transform.m[0][0] = 0.5f;
-                pArray[i]->map_transform.m[1][1] = 0.5f;
-            } else if (e && (e->flags & ExceptionFlag_Quadruple)) {
-                pArray[i]->map_transform.m[0][0] = 0.25f;
-                pArray[i]->map_transform.m[1][1] = 0.25f;
-            }
         } else {
             c = pArray[i]->index_base + pArray[i]->index_range / 2;
             pArray[i]->colour = ((br_colour*)gRender_palette->pixels)[c];
