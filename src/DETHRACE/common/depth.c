@@ -470,6 +470,8 @@ void InitDepthEffects(void) {
         }
         gHorizon_material->flags |= BR_MATF_PERSPECTIVE;
     }
+    // Render sky first with no depth participation: prevents depth-fighting with far terrain and colour-key discard of palette-0 underground fill.
+    gHorizon_material->flags |= BR_MATF_FORCE_BACK | BR_MATF_INHIBIT_DEPTH_WRITE | BR_MATF_DISABLE_COLOUR_KEY;
     BrMaterialAdd(gHorizon_material);
     gForward_sky_model = CreateHorizonModel(gCamera);
     gRearview_sky_model = CreateHorizonModel(gRearview_camera);
