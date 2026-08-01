@@ -64,6 +64,20 @@ static char s_music_paths[MELD_MAX_MUSIC][MAX_PATH];
 static int s_music_count = 0;
 static int s_music_index = 0;
 
+// Forward declarations for helpers defined later.
+static void meld_join(char* dest, size_t len, const char* a, const char* b);
+static const char* meld_basename(const char* path);
+
+// ---------------------------------------------------------------------------
+// Asset conflict map (Phase 3): basenames that differ across game dirs
+// ---------------------------------------------------------------------------
+
+#define MELD_MAX_CONFLICTS 512
+#define MELD_CONFLICT_NAMELEN 64
+
+static char s_conflict_basenames[MELD_MAX_CONFLICTS][MELD_CONFLICT_NAMELEN];
+static int s_conflict_count = 0;
+
 // ---------------------------------------------------------------------------
 // XOR decode (method 1 only; method 2 used only by CARDEMO which has no unique
 // content, so those games are skipped)
@@ -196,6 +210,89 @@ static uint64_t meld_hash_file(const char* path) {
     }
     fclose(f);
     return h;
+}
+
+// ---------------------------------------------------------------------------
+// Conflict map helpers
+// ---------------------------------------------------------------------------
+
+static int meld_is_conflict(const char* basename) {
+    int i;
+    for (i = 0; i < s_conflict_count; i++) {
+        if (strcasecmp(s_conflict_basenames[i], basename) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void meld_add_conflict(const char* basename) {
+    if (meld_is_conflict(basename)) {
+        return;
+    }
+    if (s_conflict_count < MELD_MAX_CONFLICTS) {
+        strncpy(s_conflict_basenames[s_conflict_count], basename, MELD_CONFLICT_NAMELEN - 1);
+        s_conflict_basenames[s_conflict_count][MELD_CONFLICT_NAMELEN - 1] = 0;
+        s_conflict_count++;
+    }
+}
+
+// Scan one subdir across all game dirs; any file whose hash differs across
+// two games is added to the conflict set.
+static void meld_scan_subdir_conflicts(const char* subdir) {
+    char dir_a[MAX_PATH];
+    char file_a[MAX_PATH];
+    char dir_b[MAX_PATH];
+    char file_b[MAX_PATH];
+    const char* fname;
+    int g, other;
+    int gc = harness_game_config.game_dirs_count;
+
+    if (gc < 2) {
+        return;
+    }
+
+    for (g = 0; g < gc && g < MELD_MAX_GAMES; g++) {
+        meld_join(dir_a, sizeof(dir_a), harness_game_config.game_dirs[g].directory, subdir);
+        fname = OS_GetFirstFileInDirectory(dir_a);
+        while (fname != NULL) {
+            if (fname[0] != '.' && !meld_is_conflict(fname)) {
+                meld_join(file_a, sizeof(file_a), dir_a, fname);
+                uint64_t ha = meld_hash_file(file_a);
+                if (ha != 0) {
+                    for (other = 0; other < gc && other < MELD_MAX_GAMES; other++) {
+                        if (other == g) {
+                            continue;
+                        }
+                        meld_join(dir_b, sizeof(dir_b), harness_game_config.game_dirs[other].directory, subdir);
+                        meld_join(file_b, sizeof(file_b), dir_b, fname);
+                        uint64_t hb = meld_hash_file(file_b);
+                        if (hb != 0 && hb != ha) {
+                            meld_add_conflict(fname);
+                            break;
+                        }
+                    }
+                }
+            }
+            fname = OS_GetNextFileInDirectory();
+        }
+    }
+}
+
+static void meld_build_conflict_map(void) {
+    static const char* asset_subdirs[] = {
+        "DATA/CARS", "DATA/MODELS", "DATA/PIXELMAP",
+        "DATA/MATERIAL", "DATA/ACTORS", "DATA/ANIM", NULL
+    };
+    int i;
+
+    for (i = 0; asset_subdirs[i] != NULL; i++) {
+        meld_scan_subdir_conflicts(asset_subdirs[i]);
+    }
+
+    if (s_conflict_count > 0) {
+        LOG_INFO2("Meld conflict map: %d conflicting asset basenames", s_conflict_count);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -967,6 +1064,8 @@ void Meld_Init(void) {
     meld_build_partshop();
     meld_build_music();
 
+    meld_build_conflict_map();
+
     s_active_game = 0;
     gMeld_active = 1;
 
@@ -1015,6 +1114,150 @@ void Meld_SetActiveGame(int race_index) {
 void Meld_SetActiveGame_Opponent(int opponent_index) {
     if (opponent_index >= 0 && opponent_index < MELD_MAX_OPPONENTS) {
         s_active_game = s_opponent_source_game[opponent_index];
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: TXT file patching
+// ---------------------------------------------------------------------------
+
+// Scan a decoded line, replace any conflicting asset basename with "N:basename".
+static void meld_patch_line(const char* line, int game_idx, char* out, size_t outsize) {
+    const char* p = line;
+    char* q = out;
+    char* const qend = out + outsize - 1;
+
+    while (*p && q < qend) {
+        // Pass through separators unchanged.
+        if (*p == ' ' || *p == '\t' || *p == ',' || *p == '/' ||
+            *p == '\r' || *p == '\n') {
+            *q++ = *p++;
+            continue;
+        }
+
+        // Collect a token (run of non-separator chars).
+        const char* tok_start = p;
+        while (*p && *p != ' ' && *p != '\t' && *p != ',' &&
+               *p != '/' && *p != '\r' && *p != '\n') {
+            p++;
+        }
+        int tok_len = (int)(p - tok_start);
+
+        if (tok_len >= 5 && tok_len < MELD_CONFLICT_NAMELEN) {
+            char tok[MELD_CONFLICT_NAMELEN];
+            memcpy(tok, tok_start, tok_len);
+            tok[tok_len] = 0;
+
+            // Must have a .ext of 2-4 chars.
+            char* dot = strrchr(tok, '.');
+            if (dot && dot != tok && (int)strlen(dot + 1) >= 2 &&
+                (int)strlen(dot + 1) <= 4 && meld_is_conflict(tok)) {
+                int written = snprintf(q, (size_t)(qend - q), "%d:%s", game_idx, tok);
+                if (written > 0) {
+                    q += written;
+                }
+                continue;
+            }
+        }
+
+        // Not a conflicting filename; copy the token verbatim.
+        int copy_len = tok_len;
+        if (q + copy_len > qend) {
+            copy_len = (int)(qend - q);
+        }
+        memcpy(q, tok_start, copy_len);
+        q += copy_len;
+    }
+    *q = 0;
+}
+
+// Return 1 if this tail path should be decoded and patched for asset refs.
+static int meld_needs_patching(const char* tail) {
+    const char* base;
+    size_t blen;
+
+    base = meld_basename(tail);
+    blen = strlen(base);
+
+    // Must be a .TXT file.
+    if (blen < 5 || strcasecmp(base + blen - 4, ".TXT") != 0) {
+        return 0;
+    }
+
+    // Skip files whose content is already merged by meld.c itself.
+    if (strcasecmp(base, "RACES.TXT") == 0 ||
+        strcasecmp(base, "NETRACES.TXT") == 0 ||
+        strcasecmp(base, "PEDRACES.TXT") == 0 ||
+        strcasecmp(base, "OPPONENT.TXT") == 0 ||
+        strcasecmp(base, "PARTSHOP.TXT") == 0 ||
+        strcasecmp(base, "GENERAL.TXT") == 0) {
+        return 0;
+    }
+
+    // Only patch TXT files in asset-bearing subdirs.
+    if (strstr(tail, "RACES/") || strstr(tail, "RACES\\") ||
+        strstr(tail, "races/") || strstr(tail, "races\\") ||
+        strstr(tail, "CARS/")  || strstr(tail, "CARS\\")  ||
+        strstr(tail, "cars/")  || strstr(tail, "cars\\")  ||
+        strstr(tail, "NONCARS/") || strstr(tail, "NONCARS\\") ||
+        strstr(tail, "noncars/") || strstr(tail, "noncars\\")) {
+        return 1;
+    }
+    return 0;
+}
+
+// Read raw_path, decode @-prefixed lines (method 1), patch conflicting asset
+// basenames to "N:basename", re-encode, and serve the result as a tmpfile.
+static FILE* meld_patch_txt_serve(const char* raw_path, int game_idx, int method) {
+    FILE* src;
+    tMeld_buf buf;
+    char line[1024];
+    char decoded[1024];
+    char patched[1024];
+
+    src = OS_fopen(raw_path, "rt");
+    if (src == NULL) {
+        return NULL;
+    }
+
+    mbuf_init(&buf);
+
+    while (fgets(line, sizeof(line), src) != NULL) {
+        int is_encoded = (line[0] == '@') && (method == 1);
+
+        if (is_encoded) {
+            strncpy(decoded, &line[1], sizeof(decoded) - 1);
+            decoded[sizeof(decoded) - 1] = 0;
+            meld_decode_method1(decoded);
+        } else {
+            strncpy(decoded, line, sizeof(decoded) - 1);
+            decoded[sizeof(decoded) - 1] = 0;
+            meld_strip_eol(decoded);
+        }
+
+        meld_patch_line(decoded, game_idx, patched, sizeof(patched));
+
+        if (is_encoded) {
+            // XOR is self-inverse: applying meld_decode_method1 to plaintext
+            // produces the correctly encoded ciphertext for that line length.
+            meld_decode_method1(patched);
+            mbuf_append(&buf, "@");
+            mbuf_append(&buf, patched);
+        } else {
+            mbuf_append(&buf, patched);
+        }
+        mbuf_append(&buf, "\n");
+    }
+    fclose(src);
+
+    if (buf.data == NULL) {
+        return NULL;
+    }
+
+    {
+        FILE* out = meld_tmpfile_from(buf.data, buf.len);
+        free(buf.data);
+        return out;
     }
 }
 
@@ -1081,6 +1324,38 @@ FILE* Meld_fopen(const char* path, const char* mode) {
         }
     }
 
+    // Phase 3.3: synthetic "N:basename" asset paths written by Phase 6 patching.
+    // Detect pattern: basename starts with a single digit + ':'.
+    if (!writing && s_conflict_count > 0 &&
+        isdigit((unsigned char)base[0]) && base[1] == ':') {
+        int n_game = base[0] - '0';
+        if (n_game >= 0 && n_game < harness_game_config.game_dirs_count) {
+            const char* real_base = base + 2;
+            // Reconstruct real path: same directory part, with the "N:" prefix stripped.
+            size_t dir_len = (size_t)(base - path);
+            char real_path[MAX_PATH];
+            if (dir_len < sizeof(real_path) - 1) {
+                memcpy(real_path, path, dir_len);
+                real_path[dir_len] = 0;
+                strncat(real_path, real_base, sizeof(real_path) - dir_len - 1);
+            } else {
+                strncpy(real_path, real_base, sizeof(real_path) - 1);
+                real_path[sizeof(real_path) - 1] = 0;
+            }
+            char tail[MAX_PATH];
+            meld_relative_tail(real_path, tail, sizeof(tail));
+            char candidate[MAX_PATH];
+            meld_join(candidate, sizeof(candidate), harness_game_config.game_dirs[n_game].directory, tail);
+            {
+                FILE* f = OS_fopen(candidate, mode);
+                if (f != NULL) {
+                    return f;
+                }
+            }
+            return NULL;
+        }
+    }
+
     // 1. Try the path as-is.
     {
         FILE* f = OS_fopen(path, mode);
@@ -1120,6 +1395,12 @@ FILE* Meld_fopen(const char* path, const char* mode) {
             meld_join(candidate, sizeof(candidate), harness_game_config.game_dirs[order[g]].directory, tail);
             f = OS_fopen(candidate, mode);
             if (f != NULL) {
+                // Phase 6: patch TXT files in RACES/, CARS/, NONCARS/ when
+                // the conflict map has entries (assets differ across games).
+                if (s_conflict_count > 0 && meld_needs_patching(tail)) {
+                    fclose(f);
+                    return meld_patch_txt_serve(candidate, order[g], s_game_method[order[g]]);
+                }
                 return f;
             }
         }
