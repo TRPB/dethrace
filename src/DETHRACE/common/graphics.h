@@ -91,6 +91,8 @@ extern int gMap_render_y_i;
 extern int gMirror_on__graphics; // suffix added to avoid duplicate symbol
 extern br_scalar gYon_squared;
 
+int WsScreenOffsetX(void);
+
 void TurnOnPaletteConversion(void);
 
 void TurnOffPaletteConversion(void);

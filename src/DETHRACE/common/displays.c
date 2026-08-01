@@ -370,7 +370,7 @@ void DimAFewBits(void) {
         int right = gProgram_state.current_car.dim_right[cockpit_index][i];
 #ifdef DETHRACE_FIX_BUGS
         {
-            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            int ws_offset = WsScreenOffsetX() * 2;
             if (ws_offset > 0 && left > gGraf_specs[gGraf_spec_index].total_width / 2) {
                 left += ws_offset;
                 right += ws_offset;
@@ -407,7 +407,7 @@ void DubreyBar(int pX_index, int pY, int pColour) {
     x = gCurrent_graf_data->ps_bar_left - gCurrent_graf_data->ps_x_pitch * pX_index;
 #ifdef DETHRACE_FIX_BUGS
     if (gCurrent_graf_data->ps_bar_left > gGraf_specs[gGraf_spec_index].total_width / 2) {
-        x += gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+        x += WsScreenOffsetX() * 2;
     }
 #endif
     BrPixelmapLine(gBack_screen, x, pY, x, gCurrent_graf_data->ps_bar_height + pY, pColour);
@@ -428,7 +428,7 @@ void DoPSPowerHeadup(int pY, int pLevel, char* pName, int pBar_colour) {
 #ifdef DETHRACE_FIX_BUGS
     {
         int ps_ws_x = (gCurrent_graf_data->ps_dim_left > gGraf_specs[gGraf_spec_index].total_width / 2)
-            ? gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width : 0;
+            ? WsScreenOffsetX() * 2 : 0;
         DimRectangle(gBack_screen, gCurrent_graf_data->ps_dim_left + ps_ws_x, pY, gCurrent_graf_data->ps_dim_right + ps_ws_x, gCurrent_graf_data->ps_dim_height + pY, 1);
         TransDRPixelmapText(gBack_screen, gCurrent_graf_data->ps_name_left + ps_ws_x, gCurrent_graf_data->ps_name_top_border + pY, gFonts + 6, pName, gBack_screen->width);
     }
@@ -909,7 +909,7 @@ int NewTextHeadupSlot2(int pSlot_index, int pFlash_rate, int pLifetime, int pFon
             the_headup->original_x = headup_slot->x;
 #ifdef DETHRACE_FIX_BUGS
             {
-                int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+                int ws_offset = WsScreenOffsetX() * 2;
                 int x_shift = 0;
                 if (ws_offset > 0) {
                     if (the_headup->cockpit_anchored) {
@@ -986,7 +986,7 @@ int NewImageHeadupSlot(int pSlot_index, int pFlash_rate, int pLifetime, int pIma
         the_headup->original_x = headup_slot->x;
 #ifdef DETHRACE_FIX_BUGS
         {
-            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            int ws_offset = WsScreenOffsetX() * 2;
             int x_shift = 0;
             if (ws_offset > 0) {
                 if (the_headup->cockpit_anchored) {
@@ -1174,7 +1174,7 @@ void DoDamageScreen(tU32 pThe_time) {
         damage_background_x = gProgram_state.current_car.damage_background_x;
 #ifdef DETHRACE_FIX_BUGS
         {
-            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            int ws_offset = WsScreenOffsetX() * 2;
             if (ws_offset > 0) {
                 the_wobble_x += ws_offset / 2;
                 damage_background_x += ws_offset / 2;
@@ -1187,7 +1187,7 @@ void DoDamageScreen(tU32 pThe_time) {
         damage_background_x = gProgram_state.current_car.damage_background_x;
 #ifdef DETHRACE_FIX_BUGS
         {
-            int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+            int ws_offset = WsScreenOffsetX() * 2;
             if (ws_offset > 0) {
                 the_wobble_x += ws_offset;
                 if (damage_background_x > gGraf_specs[gGraf_spec_index].total_width / 2) {
@@ -1277,7 +1277,7 @@ void DoInstruments(tU32 pThe_time) {
             the_wobble_x = gScreen_wobble_x;
             the_wobble_y = gScreen_wobble_y;
 #ifdef DETHRACE_FIX_BUGS
-            the_wobble_x += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            the_wobble_x += WsScreenOffsetX();
 #endif
         } else {
             the_wobble_x = 0;
@@ -1506,7 +1506,7 @@ void DoSteeringWheel(tU32 pThe_time) {
             hands_index = gProgram_state.current_car.number_of_hands_images - 1;
         }
 #ifdef DETHRACE_FIX_BUGS
-        int hands_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        int hands_ws_x = WsScreenOffsetX();
 #else
         int hands_ws_x = 0;
 #endif

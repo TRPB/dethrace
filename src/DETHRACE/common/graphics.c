@@ -433,6 +433,10 @@ br_scalar gYon_squared;
 
 #define SHADOW_D_IGNORE_FLAG 10000.0
 
+int WsScreenOffsetX(void) {
+    return (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+}
+
 // IDA: void __cdecl TurnOnPaletteConversion()
 // FUNCTION: CARM95 0x004b3020
 void TurnOnPaletteConversion(void) {
@@ -791,7 +795,7 @@ void SetBRenderScreenAndBuffers(int pX_offset, int pY_offset, int pWidth, int pH
         gScreen->base_x = (gGraf_specs[gGraf_spec_index].phys_width - 2 * gGraf_specs[gGraf_spec_index].total_width) / 2;
         gScreen->base_y = (gGraf_specs[gGraf_spec_index].phys_height - 2 * gGraf_specs[gGraf_spec_index].total_height) / 2;
     } else {
-        gScreen->base_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        gScreen->base_x = WsScreenOffsetX();
         gScreen->base_y = (gGraf_specs[gGraf_spec_index].phys_height - gGraf_specs[gGraf_spec_index].total_height) / 2;
     }
 
@@ -1973,7 +1977,7 @@ void RenderAFrame(int pDepth_mask_on) {
         gBack_screen->base_x = 0;
         gBack_screen->base_y = 0;
 #ifdef DETHRACE_FIX_BUGS
-        gMap_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        gMap_ws_x = WsScreenOffsetX();
 #endif
         if (gCurrent_race.map_image != NULL) {
             if (gReal_graf_data_index) {
@@ -2147,7 +2151,7 @@ void RenderAFrame(int pDepth_mask_on) {
         if (gProgram_state.current_car.cockpit_pixel_width > 0) {
             cock_dest_x = (gGraf_specs[gGraf_spec_index].phys_width - gProgram_state.current_car.cockpit_pixel_width) / 2;
         } else {
-            cock_dest_x = -gCurrent_graf_data->cock_margin_x + (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            cock_dest_x = -gCurrent_graf_data->cock_margin_x + WsScreenOffsetX();
         }
 #else
         int cock_dest_x = -gCurrent_graf_data->cock_margin_x;
@@ -2174,7 +2178,7 @@ void RenderAFrame(int pDepth_mask_on) {
 
 #ifdef DETHRACE_FIX_BUGS
         {
-            int mirror_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            int mirror_ws_x = WsScreenOffsetX();
             gRearview_screen->base_x = MAX(0, gScreen_wobble_x + gProgram_state.current_car.mirror_left + mirror_ws_x);
             gRearview_screen->base_y = MAX(0, gScreen_wobble_y + gProgram_state.current_car.mirror_top);
         }
@@ -2326,7 +2330,7 @@ void RenderAFrame(int pDepth_mask_on) {
             if (gProgram_state.current_car.cockpit_pixel_width > 0) {
                 cock_dest_x = (gGraf_specs[gGraf_spec_index].phys_width - gProgram_state.current_car.cockpit_pixel_width) / 2;
             } else {
-                cock_dest_x = -gCurrent_graf_data->cock_margin_x + (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+                cock_dest_x = -gCurrent_graf_data->cock_margin_x + WsScreenOffsetX();
             }
 #else
             int cock_dest_x = -gCurrent_graf_data->cock_margin_x;
@@ -2344,7 +2348,7 @@ void RenderAFrame(int pDepth_mask_on) {
                 gCurrent_graf_data->total_cock_height);
             if (gMirror_on__graphics) {
 #ifdef DETHRACE_FIX_BUGS
-                int mirror_ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+                int mirror_ws_x = WsScreenOffsetX();
 #else
                 int mirror_ws_x = 0;
 #endif

@@ -125,7 +125,7 @@ void ChangeSelection(tInterface_spec* pSpec, int* pOld_selection, int* pNew_sele
 void RecopyAreas(tInterface_spec* pSpec, br_pixelmap** pCopy_areas) {
     int i;
 #ifdef DETHRACE_FIX_BUGS
-    int ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+    int ws_x = WsScreenOffsetX();
 #else
     int ws_x = 0;
 #endif
@@ -276,7 +276,7 @@ int DoInterfaceScreen(tInterface_spec* pSpec, int pOptions, int pCurrent_choice)
     WaitForNoKeys();
     for (i = 0; i < pSpec->number_of_recopy_areas; i++) {
         BrPixelmapRectangleCopy(copy_areas[i], 0, 0, gBack_screen,
-            pSpec->recopy_areas[i].left[gGraf_data_index] + (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2,
+            pSpec->recopy_areas[i].left[gGraf_data_index] + WsScreenOffsetX(),
             pSpec->recopy_areas[i].top[gGraf_data_index],
             pSpec->recopy_areas[i].right[gGraf_data_index] - pSpec->recopy_areas[i].left[gGraf_data_index],
             pSpec->recopy_areas[i].bottom[gGraf_data_index] - pSpec->recopy_areas[i].top[gGraf_data_index]);
@@ -414,7 +414,7 @@ int DoInterfaceScreen(tInterface_spec* pSpec, int pOptions, int pCurrent_choice)
         if (gMouse_in_use && !selection_changed) {
             GetMousePosition(&x_coord, &y_coord);
 #ifdef DETHRACE_FIX_BUGS
-            x_coord -= (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            x_coord -= WsScreenOffsetX();
 #endif
             new_mouse_down = EitherMouseButtonDown();
             mouse_down = new_mouse_down && !last_mouse_down;

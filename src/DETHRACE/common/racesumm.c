@@ -868,7 +868,7 @@ void DamageScrnDraw(int pCurrent_choice, int pCurrent_mode) {
     br_actor* sel_actor;
     char* name;
 #ifdef DETHRACE_FIX_BUGS
-    int ws_x = (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+    int ws_x = WsScreenOffsetX();
 #endif
 
     if (((pCurrent_choice == 0 && pCurrent_mode == 0) || !gDone_initial) && (gWreck_zoomed_in < 0 && gWreck_selected >= 0)) {

@@ -1577,7 +1577,7 @@ void ShowFlic(int pIndex) {
     int flic_y = gMain_flic_list[pIndex].y_offset;
 #ifdef DETHRACE_FIX_BUGS
     if (gWs_menu_mode) {
-        flic_x += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        flic_x += WsScreenOffsetX();
     }
 #endif
     do {
@@ -1916,7 +1916,7 @@ void AddToFlicQueue(int pIndex, int pX, int pY, int pMust_finish) {
         int flic_y = pY >= 0 ? pY : gMain_flic_list[pIndex].y_offset;
 #ifdef DETHRACE_FIX_BUGS
         if (gWs_menu_mode) {
-            flic_x += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+            flic_x += WsScreenOffsetX();
         }
 #endif
         StartFlic(
@@ -1940,7 +1940,7 @@ void InitialiseFlicPanel(int pIndex, int pLeft, int pTop, int pWidth, int pHeigh
     gPanel_flic[pIndex].data = NULL;
 #ifdef DETHRACE_FIX_BUGS
     if (gWs_menu_mode) {
-        pLeft += (gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width) / 2;
+        pLeft += WsScreenOffsetX();
     }
 #endif
     gPanel_flic_left[pIndex] = pLeft;

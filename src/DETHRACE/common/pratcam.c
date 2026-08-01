@@ -468,7 +468,7 @@ void DoPratcam(tU32 pThe_time) {
     prat_right = gProgram_state.current_car.prat_right;
 #ifdef DETHRACE_FIX_BUGS
     {
-        int ws_offset = gGraf_specs[gGraf_spec_index].phys_width - gGraf_specs[gGraf_spec_index].total_width;
+        int ws_offset = WsScreenOffsetX() * 2;
         if (ws_offset > 0 && prat_left > gGraf_specs[gGraf_spec_index].total_width / 2) {
             prat_left += ws_offset;
             prat_right += ws_offset;
