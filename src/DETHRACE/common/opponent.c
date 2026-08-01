@@ -1593,6 +1593,34 @@ void TeleportOpponentToNearestSafeLocation(tOpponent_spec* pOpponent_spec) {
     AddToOpponentsProjectedRoute(pOpponent_spec, section_no, section_direction);
     TopUpRandomRoute(pOpponent_spec, -1);
     section_counter = 1;
+#ifdef DETHRACE_FIX_BUGS
+    {
+        int sections_checked = 0;
+        br_vector3 best_pos;
+        br_scalar best_dist = -1.0f;
+        BrVector3Copy(&best_pos, &pOpponent_spec->car_spec->car_master_actor->t.t.translate.t);
+        while (!found_safe_place && sections_checked < 50) {
+            BrVector3Copy(&pOpponent_spec->car_spec->car_master_actor->t.t.translate.t, &gProgram_state.AI_vehicles.path_nodes[gProgram_state.AI_vehicles.path_sections[pOpponent_spec->next_sections[section_counter].section_no].node_indices[pOpponent_spec->next_sections[section_counter].direction]].p);
+            CalcOpponentConspicuousnessWithAViewToCheatingLikeFuck(pOpponent_spec);
+            if (pOpponent_spec->player_to_oppo_d > gIn_view_distance) {
+                found_safe_place = 1;
+            } else if (pOpponent_spec->player_to_oppo_d > best_dist) {
+                best_dist = pOpponent_spec->player_to_oppo_d;
+                BrVector3Copy(&best_pos, &pOpponent_spec->car_spec->car_master_actor->t.t.translate.t);
+            }
+            sections_checked++;
+            section_counter++;
+            if (pOpponent_spec->nnext_sections <= section_counter) {
+                ShiftOpponentsProjectedRoute(pOpponent_spec, section_counter - 1);
+                section_counter = 0;
+                TopUpRandomRoute(pOpponent_spec, -1);
+            }
+        }
+        if (!found_safe_place) {
+            BrVector3Copy(&pOpponent_spec->car_spec->car_master_actor->t.t.translate.t, &best_pos);
+        }
+    }
+#else
     while (!found_safe_place) {
         BrVector3Copy(&pOpponent_spec->car_spec->car_master_actor->t.t.translate.t, &gProgram_state.AI_vehicles.path_nodes[gProgram_state.AI_vehicles.path_sections[pOpponent_spec->next_sections[section_counter].section_no].node_indices[pOpponent_spec->next_sections[section_counter].direction]].p);
         CalcOpponentConspicuousnessWithAViewToCheatingLikeFuck(pOpponent_spec);
@@ -1606,6 +1634,7 @@ void TeleportOpponentToNearestSafeLocation(tOpponent_spec* pOpponent_spec) {
             TopUpRandomRoute(pOpponent_spec, -1);
         }
     }
+#endif
 }
 
 // IDA: void __usercall ChooseNewObjective(tOpponent_spec *pOpponent_spec@<EAX>, int pMust_choose_one@<EDX>)
