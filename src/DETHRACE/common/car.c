@@ -1496,7 +1496,7 @@ void MungeSpecialVolume(tCollision_info* pCar) {
             new_special_volume = car->auto_special_volume;
         }
     }
-    if (car->last_special_volume != new_special_volume) {
+    if (car->last_special_volume != new_special_volume && car->driver == eDriver_local_human) {
         if (car->last_special_volume != NULL && car->last_special_volume->exit_noise >= 0
             && (new_special_volume == NULL || car->last_special_volume->exit_noise != new_special_volume->exit_noise)) {
             DRS3StartSound(gCar_outlet, car->last_special_volume->exit_noise);
