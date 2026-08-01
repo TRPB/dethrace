@@ -321,6 +321,12 @@ int Harness_Init(int* argc, char* argv[]) {
         return 1;
     }
 
+    // When Meld=1 with no explicit game selection, default to the first listed game dir.
+    if (harness_game_config.meld && harness_game_config.game_dirs_count >= 1
+            && strlen(harness_game_config.selected_dir) == 0) {
+        safe_strcpy(harness_game_config.selected_dir, harness_game_config.game_dirs[0].directory);
+    }
+
     // now resolve the platform
     if (Harness_InitPlatform() != 0) {
         return 1;
