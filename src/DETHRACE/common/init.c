@@ -18,6 +18,7 @@
 #include "grafdata.h"
 #include "graphics.h"
 #include "harness/config.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "loading.h"
 #include "loadsave.h"
@@ -657,6 +658,11 @@ void InitialiseApplication(int pArgc, char** pArgv) {
     InitFlics();
     AllocateStandardLamp();
     InitAmbience();
+#ifdef DETHRACE_FIX_BUGS
+    if (harness_game_config.meld && harness_game_config.game_dirs_count > 1) {
+        Meld_Init();
+    }
+#endif
     LoadOpponents();
     LoadPowerups();
     LoadRaces(gRace_list, &gNumber_of_races, -1);
@@ -730,6 +736,11 @@ void InitGame(int pStart_race) {
     gProgram_state.rank = gInitial_rank;
     gProgram_state.credits = gInitial_credits[gProgram_state.skill_level];
     gProgram_state.credits_per_rank = gCredits_per_rank[gProgram_state.skill_level];
+#ifdef DETHRACE_FIX_BUGS
+    if (gMeld_active && gMeld_primary_race_count > 0) {
+        gProgram_state.credits_per_rank = (int)((long long)gProgram_state.credits_per_rank * gMeld_total_race_count / gMeld_primary_race_count);
+    }
+#endif
     gProgram_state.number_of_cars = 1;
     gProgram_state.cars_available[0] = gProgram_state.frank_or_anniness;
     gProgram_state.game_completed = 0;

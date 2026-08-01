@@ -9,6 +9,7 @@
 #include "grafdata.h"
 #include "graphics.h"
 #include "harness/config.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "init.h"
 #include "input.h"
@@ -134,7 +135,14 @@ void LoadSavedGames(void) {
     }
 #endif
 
-    PathCat(the_path, gApplication_path, "SAVEGAME");
+#ifdef DETHRACE_FIX_BUGS
+    if (gMeld_active) {
+        PathCat(the_path, gApplication_path, "SAVEGAME_M");
+    } else
+#endif
+    {
+        PathCat(the_path, gApplication_path, "SAVEGAME");
+    }
     PathCat(the_path, the_path, "SAVEx");
     for (i = 0; i < COUNT_OF(gSaved_games); i++) {
         the_path[strlen(the_path) - 1] = '0' + i;
@@ -601,7 +609,14 @@ void SaveTheGame(int pSlot_number) {
     FILE* f;
 
     gSaved_games[pSlot_number]->checksum = CalcLSChecksum(gSaved_games[pSlot_number]);
-    PathCat(the_path, gApplication_path, "SAVEGAME");
+#ifdef DETHRACE_FIX_BUGS
+    if (gMeld_active) {
+        PathCat(the_path, gApplication_path, "SAVEGAME_M");
+    } else
+#endif
+    {
+        PathCat(the_path, gApplication_path, "SAVEGAME");
+    }
     PathCat(the_path, the_path, "SAVEx");
     the_path[strlen(the_path) - 1] = '0' + pSlot_number;
     PDFileUnlock(the_path);

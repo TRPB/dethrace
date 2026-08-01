@@ -24,6 +24,7 @@
 #include "graphics.h"
 #include "harness/config.h"
 #include "harness/hooks.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "init.h"
 #include "input.h"
@@ -2659,7 +2660,14 @@ void LoadRaces(tRace_list_spec* pRace_list, int* pCount, int pRace_type_index) {
         } else
 #endif
         {
-            pRace_list[i].suggested_rank = 99 - 100 * i / (*pCount - 3);
+#ifdef DETHRACE_FIX_BUGS
+            if (gMeld_active) {
+                pRace_list[i].suggested_rank = (*pCount > 1) ? (99 - (98 * i) / (*pCount - 1)) : 99;
+            } else
+#endif
+            {
+                pRace_list[i].suggested_rank = 99 - 100 * i / (*pCount - 3);
+            }
             if (i >= 3) {
                 pRace_list[i].rank_required = pRace_list[i - 2].suggested_rank;
             } else {
@@ -2752,6 +2760,11 @@ void LoadRaceInfo(int pRace_index, tRace_info* pRace_info) {
     float temp_float;
     tText_chunk* the_chunk;
 
+#ifdef DETHRACE_FIX_BUGS
+    if (gMeld_active) {
+        Meld_SetActiveGame(pRace_index);
+    }
+#endif
     f = OpenRaceFile();
     temp_index = pRace_index;
 
@@ -3337,6 +3350,11 @@ void LoadOpponentsCars(tRace_info* pRace_info) {
     for (i = 0; i < pRace_info->number_of_racers; i++) {
         PossibleService();
         if (pRace_info->opponent_list[i].index >= 0) {
+#ifdef DETHRACE_FIX_BUGS
+            if (gMeld_active) {
+                Meld_SetActiveGame_Opponent(pRace_info->opponent_list[i].index);
+            }
+#endif
             pRace_info->opponent_list[i].car_spec = BrMemAllocate(sizeof(tCar_spec), kMem_oppo_car_spec);
             LoadCar(
                 gOpponents[pRace_info->opponent_list[i].index].car_file_name,

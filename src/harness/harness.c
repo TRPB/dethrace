@@ -3,6 +3,7 @@
 #include "ascii_tables.h"
 #include "include/harness/config.h"
 #include "include/harness/hooks.h"
+#include "include/harness/meld.h"
 #include "include/harness/os.h"
 #include "ini.h"
 #include "platforms/null.h"
@@ -569,6 +570,10 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
         }
     } else if (MATCH("Slop", "ExtendDrawDistance")) {
         harness_game_config.extend_draw_distance = (value[0] == '1');
+    } else if (MATCH("Slop", "Meld")) {
+        harness_game_config.meld = (value[0] == '1');
+    } else if (MATCH("Slop", "MeldBothStartingCars")) {
+        harness_game_config.meld_both_starting_cars = (value[0] == '1');
     }
 
     else if (MATCH("Developers", "Diagnostics")) {
@@ -627,6 +632,9 @@ int Harness_ProcessIniFile(void) {
 
 // Filesystem hooks
 FILE* Harness_Hook_fopen(const char* pathname, const char* mode) {
+    if (gMeld_active) {
+        return Meld_fopen(pathname, mode);
+    }
     return OS_fopen(pathname, mode);
 }
 

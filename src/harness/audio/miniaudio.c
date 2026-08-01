@@ -3,6 +3,7 @@
 
 #include "harness/audio.h"
 #include "harness/config.h"
+#include "harness/meld.h"
 #include "harness/os.h"
 #include "harness/trace.h"
 
@@ -66,6 +67,9 @@ tAudioBackend_error_code AudioBackend_Init(void) {
 }
 
 tAudioBackend_error_code AudioBackend_InitCDA(void) {
+    if (gMeld_active) {
+        return Meld_MusicAvailable() ? eAB_success : eAB_error;
+    }
     // check if music files are present or not
     if (access("MUSIC/Track02.ogg", F_OK) == -1) {
         return eAB_error;
@@ -97,7 +101,11 @@ tAudioBackend_error_code AudioBackend_PlayCDA(int track) {
     char path[256];
     ma_result result;
 
-    sprintf(path, "MUSIC/Track0%d.ogg", track);
+    if (gMeld_active) {
+        Meld_ResolveMusicPath(track, path, sizeof(path));
+    } else {
+        sprintf(path, "MUSIC/Track0%d.ogg", track);
+    }
 
     if (access(path, F_OK) == -1) {
         return eAB_error;
