@@ -502,6 +502,12 @@ void SetGraphicsOptions(void) {
     SetAccessoryRendering(1 - gRadio_bastards__options[9].current_value);
     SetSmokeOn(1 - gRadio_bastards__options[10].current_value);
     SetSoundDetailLevel(2 - gRadio_bastards__options[11].current_value);
+
+    if (harness_game_config.extend_draw_distance) {
+        SetYon(1000.f);
+        SetYonFactor(1.f);
+    }
+
     SaveOptions();
 }
 

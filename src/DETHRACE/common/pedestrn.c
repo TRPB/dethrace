@@ -2493,8 +2493,8 @@ void MungePedestrians(tU32 pFrame_period) {
     gVesuvians_this_time = 0;
     gNumber_of_ped_gibs = 32;
     camera_ptr = gCamera->type_data;
-    max_distance = harness_game_config.extend_draw_distance ? 220.f : ACTIVE_PED_DXDZ;
-    gMax_distance_squared = harness_game_config.extend_draw_distance ? 48400.f : 121.f;
+    max_distance = harness_game_config.extend_draw_distance ? ACTIVE_PED_DXDZ * 20.f : ACTIVE_PED_DXDZ;
+    gMax_distance_squared = max_distance * max_distance;
     if (!gAction_replay_mode) {
         MungePedGibs(pFrame_period);
     }
@@ -2594,7 +2594,7 @@ void RespawnPedestrians(void) {
             int ped_respawn_animate;
             x_delta = fabs(the_pedestrian->pos.v[X] - gCamera_to_world.m[3][X]);
             z_delta = fabs(the_pedestrian->pos.v[Z] - gCamera_to_world.m[3][Z]);
-            br_scalar active_dxdz = harness_game_config.extend_draw_distance ? 220.f : ACTIVE_PED_DXDZ;
+            br_scalar active_dxdz = harness_game_config.extend_draw_distance ? ACTIVE_PED_DXDZ * 20.f : ACTIVE_PED_DXDZ;
             ped_respawn_animate = x_delta <= active_dxdz && z_delta <= active_dxdz;
 #else
 #define ped_respawn_animate 1

@@ -5,7 +5,6 @@
 #include "formats.h"
 #include "globvars.h"
 #include "globvrbm.h"
-#include "harness/config.h"
 #include "harness/trace.h"
 #include "init.h"
 #include "pd/sys.h"
@@ -527,9 +526,6 @@ void RenderTrack(br_actor* pWorld, tTrack_spec* pTrack_spec, br_actor* pCamera, 
 // FUNCTION: CARM95 0x004a9e6e
 br_scalar GetYonFactor(void) {
 
-    if (harness_game_config.extend_draw_distance) {
-        return 1000.f;
-    }
     return gYon_factor;
 }
 
