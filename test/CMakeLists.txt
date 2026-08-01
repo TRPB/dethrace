@@ -29,6 +29,7 @@ target_sources(dethrace_test PRIVATE
     DETHRACE/test_loading.c
     DETHRACE/test_powerup.c
     DETHRACE/test_utility.c
+    harness/test_meld.c
     framework/unity.c
     framework/unity.h
     framework/unity_internals.h

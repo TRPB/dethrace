@@ -324,6 +324,7 @@ int Harness_Init(int* argc, char* argv[]) {
     // When Meld=1 with no explicit game selection, default to the first listed game dir.
     if (harness_game_config.meld && harness_game_config.game_dirs_count >= 1
             && strlen(harness_game_config.selected_dir) == 0) {
+        LOG_INFO2("Meld: auto-selecting game dir: %s", harness_game_config.game_dirs[0].directory);
         safe_strcpy(harness_game_config.selected_dir, harness_game_config.game_dirs[0].directory);
     }
 

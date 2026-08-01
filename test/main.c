@@ -36,6 +36,7 @@ extern void test_init_suite();
 extern void test_graphics_suite();
 extern void test_powerup_suite();
 extern void test_flicplay_suite();
+extern void test_meld_suite();
 
 char* root_dir;
 
@@ -232,6 +233,9 @@ int main(int argc, char** argv) {
     test_graphics_suite();
     test_powerup_suite();
     test_flicplay_suite();
+
+    // harness
+    test_meld_suite();
 
     return UNITY_END();
 }

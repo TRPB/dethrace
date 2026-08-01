@@ -12,6 +12,7 @@
 #include "globvrpb.h"
 #include "graphics.h"
 #include "harness/config.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "init.h"
 #include "loading.h"
@@ -369,6 +370,7 @@ int ChooseOpponent(int pNastiness, int* pHad_scum) {
         if (gOpponents[i].strength_rating == pNastiness
             && gProgram_state.current_car.index != i
             && !gOpponents[i].picked
+            && Meld_IsOpponentEligible(i)
             && (gOpponents[i].car_number >= 0 || !*pHad_scum)) {
             temp_array[count++] = i;
         }

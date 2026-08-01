@@ -10,6 +10,7 @@
 #include "grafdata.h"
 #include "graphics.h"
 #include "harness/config.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "input.h"
 #include "intrface.h"
@@ -672,6 +673,7 @@ int ChangeCar(int pNet_mode, int* pCar_index, tNet_game_details* pNet_game) {
         }
     }
     for (i = 0; i < gProgram_state.number_of_cars; i++) {
+        Meld_SetActiveGame_Opponent(gProgram_state.cars_available[i]);
         if (gOpponents[gProgram_state.cars_available[i]].stolen_car_image_data == NULL) {
             LoadFlicData(gOpponents[gProgram_state.cars_available[i]].stolen_car_flic_name,
                 &gOpponents[gProgram_state.cars_available[i]].stolen_car_image_data,

@@ -743,6 +743,9 @@ void InitGame(int pStart_race) {
 #endif
     gProgram_state.number_of_cars = 1;
     gProgram_state.cars_available[0] = gProgram_state.frank_or_anniness;
+#ifdef DETHRACE_FIX_BUGS
+    Meld_AddBothStartingCars(gProgram_state.frank_or_anniness, gProgram_state.cars_available, &gProgram_state.number_of_cars);
+#endif
     gProgram_state.game_completed = 0;
     gProgram_state.redo_race_index = -1;
     gWait_for_it = 0;
@@ -779,7 +782,11 @@ void DisposeGameIfNecessary(void) {
 // IDA: void __cdecl LoadInTrack()
 // FUNCTION: CARM95 0x004bc93a
 void LoadInTrack(void) {
-
+#ifdef DETHRACE_FIX_BUGS
+    if (gMeld_active) {
+        Meld_SetActiveGame(gProgram_state.current_race_index);
+    }
+#endif
     LoadTrack(gProgram_state.track_file_name, &gProgram_state.track_spec, &gCurrent_race);
 }
 

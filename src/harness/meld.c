@@ -7,6 +7,10 @@
 #include "harness/os.h"
 #include "harness/trace.h"
 
+extern void EncodeLine(char* pS);
+extern int gEncryption_method;
+extern char* GetALineWithNoPossibleService(FILE* pF, unsigned char* pS);
+
 #include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -55,6 +59,8 @@ static size_t s_partshop_len = 0;
 static int s_race_source_game[MELD_MAX_RACES];
 // Opponent slot -> source game index.
 static int s_opponent_source_game[MELD_MAX_OPPONENTS];
+// Opponent slot -> car_file name (first token of car file line).
+static char s_slot_car_file[MELD_MAX_OPPONENTS][256];
 
 // Currently active game for VFS routing.
 static int s_active_game = 0;
@@ -72,7 +78,7 @@ static const char* meld_basename(const char* path);
 // Asset conflict map (Phase 3): basenames that differ across game dirs
 // ---------------------------------------------------------------------------
 
-#define MELD_MAX_CONFLICTS 512
+#define MELD_MAX_CONFLICTS 2048
 #define MELD_CONFLICT_NAMELEN 64
 
 static char s_conflict_basenames[MELD_MAX_CONFLICTS][MELD_CONFLICT_NAMELEN];
@@ -83,34 +89,6 @@ static int s_conflict_count = 0;
 // content, so those games are skipped)
 // ---------------------------------------------------------------------------
 
-static const unsigned char MELD_KEY[16] = {
-    0x6c, 0x1b, 0x99, 0x5f, 0xb9, 0xcd, 0x5f, 0x13,
-    0xcb, 0x04, 0x20, 0x0e, 0x5e, 0x1c, 0xa1, 0x0e
-};
-
-static void meld_decode_method1(char* buf) {
-    int len = (int)strlen(buf);
-    int seed;
-    int i;
-
-    while (len > 0 && (buf[len - 1] == '\r' || buf[len - 1] == '\n')) {
-        buf[--len] = 0;
-    }
-    seed = len % 16;
-    for (i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)buf[i];
-        if (c == 0x9f) {
-            c = '\t';
-        }
-        c = ((MELD_KEY[seed] ^ (c - 32)) & 0x7F) + 32;
-        if (c == 0x9f) {
-            c = '\t';
-        }
-        buf[i] = (char)c;
-        seed = (seed + 7) % 16;
-    }
-}
-
 // Strip trailing CR/LF in place.
 static void meld_strip_eol(char* buf) {
     int len = (int)strlen(buf);
@@ -119,62 +97,11 @@ static void meld_strip_eol(char* buf) {
     }
 }
 
-// Strip leading whitespace by shifting in place.
-static void meld_strip_leading_ws(char* buf) {
-    char* p = buf;
-    while (*p == ' ' || *p == '\t') {
-        p++;
-    }
-    if (p != buf) {
-        memmove(buf, p, strlen(p) + 1);
-    }
-}
-
-// Returns 1 if this line should be treated as a comment / skipped (mirrors
-// GetALineWithNoPossibleService: keep lines starting with alnum or one of
-// - . ! & ( ' ").
-static int meld_is_comment(const char* buf) {
-    char c = buf[0];
-    if (c == 0) {
-        return 1;
-    }
-    if (isalnum((unsigned char)c)) {
-        return 0;
-    }
-    switch (c) {
-    case '-':
-    case '.':
-    case '!':
-    case '&':
-    case '(':
-    case '\'':
-    case '"':
-        return 0;
-    default:
-        return 1;
-    }
-}
-
 // Read one meaningful data line from f (decoded if needed, skipping
-// comments/blanks). Returns 0 on EOF, 1 on success. method selects decode.
-static int meld_readline_m(FILE* f, char* buf, int maxlen, int method) {
-    while (fgets(buf, maxlen, f) != NULL) {
-        if (buf[0] == '@') {
-            // shift off the '@' and decode
-            memmove(buf, buf + 1, strlen(buf));
-            if (method == 1) {
-                meld_decode_method1(buf);
-            }
-        } else {
-            meld_strip_eol(buf);
-        }
-        meld_strip_leading_ws(buf);
-        if (meld_is_comment(buf)) {
-            continue;
-        }
-        return 1;
-    }
-    return 0;
+// comments/blanks). Returns 0 on EOF, 1 on success.
+static int meld_readline_m(FILE* f, int method, char* buf) {
+    gEncryption_method = method;
+    return GetALineWithNoPossibleService(f, (unsigned char*)buf) != NULL;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,12 +164,61 @@ static void meld_add_conflict(const char* basename) {
     }
 }
 
-// Scan one subdir across all game dirs; any file whose hash differs across
+// Scan one subdir across all game dirs; any file whose content differs across
 // two games is added to the conflict set.
+
+static int meld_file_exists(const char* path) {
+    FILE* f = OS_fopen(path, "rb");
+    if (f != NULL) {
+        fclose(f);
+        return 1;
+    }
+    return 0;
+}
+
+// Compare two files byte-for-byte, ignoring \r so CRLF and LF files that are
+// otherwise identical are not treated as conflicting.
+// Files larger than 4 MB are compared by size only (avoids slow startup reads).
+#define MELD_MAX_COMPARE_BYTES (4 * 1024 * 1024)
+static int meld_files_same(const char* path_a, const char* path_b) {
+    FILE* fa;
+    FILE* fb;
+    long size_a, size_b;
+    int same;
+
+    fa = OS_fopen(path_a, "rb");
+    fb = OS_fopen(path_b, "rb");
+    if (fa == NULL || fb == NULL) {
+        if (fa) { fclose(fa); }
+        if (fb) { fclose(fb); }
+        return 0;
+    }
+
+    fseek(fa, 0, SEEK_END); size_a = ftell(fa); rewind(fa);
+    fseek(fb, 0, SEEK_END); size_b = ftell(fb); rewind(fb);
+
+    if (size_a > MELD_MAX_COMPARE_BYTES || size_b > MELD_MAX_COMPARE_BYTES) {
+        fclose(fa); fclose(fb);
+        return size_a == size_b;
+    }
+
+    same = 1;
+    {
+        int ca, cb;
+        do {
+            do { ca = fgetc(fa); } while (ca == '\r');
+            do { cb = fgetc(fb); } while (cb == '\r');
+            if (ca != cb) { same = 0; break; }
+        } while (ca != EOF);
+    }
+    fclose(fa); fclose(fb);
+    return same;
+}
+
 static void meld_scan_subdir_conflicts(const char* subdir) {
     char dir_a[MAX_PATH];
-    char file_a[MAX_PATH];
     char dir_b[MAX_PATH];
+    char file_a[MAX_PATH];
     char file_b[MAX_PATH];
     const char* fname;
     int g, other;
@@ -252,25 +228,25 @@ static void meld_scan_subdir_conflicts(const char* subdir) {
         return;
     }
 
+    LOG_INFO2("Meld conflict scan: %s", subdir);
+
     for (g = 0; g < gc && g < MELD_MAX_GAMES; g++) {
         meld_join(dir_a, sizeof(dir_a), harness_game_config.game_dirs[g].directory, subdir);
         fname = OS_GetFirstFileInDirectory(dir_a);
         while (fname != NULL) {
             if (fname[0] != '.' && !meld_is_conflict(fname)) {
                 meld_join(file_a, sizeof(file_a), dir_a, fname);
-                uint64_t ha = meld_hash_file(file_a);
-                if (ha != 0) {
-                    for (other = 0; other < gc && other < MELD_MAX_GAMES; other++) {
-                        if (other == g) {
-                            continue;
-                        }
-                        meld_join(dir_b, sizeof(dir_b), harness_game_config.game_dirs[other].directory, subdir);
-                        meld_join(file_b, sizeof(file_b), dir_b, fname);
-                        uint64_t hb = meld_hash_file(file_b);
-                        if (hb != 0 && hb != ha) {
-                            meld_add_conflict(fname);
-                            break;
-                        }
+                for (other = 0; other < gc && other < MELD_MAX_GAMES; other++) {
+                    if (other == g) {
+                        continue;
+                    }
+                    meld_join(dir_b, sizeof(dir_b), harness_game_config.game_dirs[other].directory, subdir);
+                    meld_join(file_b, sizeof(file_b), dir_b, fname);
+                    // Only a conflict if the file actually exists in the other
+                    // game AND the content genuinely differs beyond line endings.
+                    if (meld_file_exists(file_b) && !meld_files_same(file_a, file_b)) {
+                        meld_add_conflict(fname);
+                        break;
                     }
                 }
             }
@@ -281,18 +257,18 @@ static void meld_scan_subdir_conflicts(const char* subdir) {
 
 static void meld_build_conflict_map(void) {
     static const char* asset_subdirs[] = {
-        "DATA/CARS", "DATA/MODELS", "DATA/PIXELMAP",
+        "DATA", "DATA/CARS", "DATA/MODELS", "DATA/PIXELMAP",
         "DATA/MATERIAL", "DATA/ACTORS", "DATA/ANIM", NULL
     };
     int i;
+
+    LOG_INFO("Meld: building asset conflict map");
 
     for (i = 0; asset_subdirs[i] != NULL; i++) {
         meld_scan_subdir_conflicts(asset_subdirs[i]);
     }
 
-    if (s_conflict_count > 0) {
-        LOG_INFO2("Meld conflict map: %d conflicting asset basenames", s_conflict_count);
-    }
+    LOG_INFO2("Meld: conflict map done, %d conflicting asset basenames", s_conflict_count);
 }
 
 // ---------------------------------------------------------------------------
@@ -325,13 +301,13 @@ static int meld_detect_method(int game_idx) {
     }
     fclose(f);
     if (buf[0] != '@') {
-        // plaintext file (already decoded) — treat as method 1
-        return 1;
+        return 2;
     }
     memmove(buf, buf + 1, strlen(buf));
-    meld_decode_method1(buf);
-    // GENERAL.TXT starts with version "0.01" for method 1.
-    if (strncmp(buf, "0.01", 4) == 0) {
+    gEncryption_method = 1;
+    EncodeLine(buf);
+    buf[6] = '\0';
+    if (strcmp(buf, "0.01\t\t") == 0) {
         return 1;
     }
     return 2;
@@ -377,6 +353,18 @@ static void mbuf_append(tMeld_buf* b, const char* s) {
     b->len += sl;
 }
 
+// Encode a plain-text line with method-1 and append "@<encoded>\n" to buf.
+static void mbuf_append_m1(tMeld_buf* b, const char* line) {
+    char encoded[MELD_LINE_LEN];
+    strncpy(encoded, line, sizeof(encoded) - 1);
+    encoded[sizeof(encoded) - 1] = 0;
+    gEncryption_method = 1;
+    EncodeLine(encoded);
+    mbuf_append(b, "@");
+    mbuf_append(b, encoded);
+    mbuf_append(b, "\n");
+}
+
 // ---------------------------------------------------------------------------
 // RACES.TXT merge
 // ---------------------------------------------------------------------------
@@ -400,7 +388,7 @@ static int meld_read_one_race(FILE* f, int method, tMeld_race* r) {
     int j;
 
     r->num_lines = 0;
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     if (strcmp(s, "END") == 0) {
@@ -411,21 +399,21 @@ static int meld_read_one_race(FILE* f, int method, tMeld_race* r) {
         strcpy(r->lines[r->num_lines++], s);
     }
     // FLI/MAP/INFO line
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     if (r->num_lines < MELD_MAX_RACE_LINES) {
         strcpy(r->lines[r->num_lines++], s);
     }
     // TRACK.TXT line
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     if (r->num_lines < MELD_MAX_RACE_LINES) {
         strcpy(r->lines[r->num_lines++], s);
     }
     // chunk count
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     chunk_count = atoi(s);
@@ -436,21 +424,21 @@ static int meld_read_one_race(FILE* f, int method, tMeld_race* r) {
         int line_count;
         int k;
         // x/y line
-        if (!meld_readline_m(f, s, sizeof(s), method)) {
+        if (!meld_readline_m(f, method, s)) {
             return -1;
         }
         if (r->num_lines < MELD_MAX_RACE_LINES) {
             strcpy(r->lines[r->num_lines++], s);
         }
         // frame/frame_end line
-        if (!meld_readline_m(f, s, sizeof(s), method)) {
+        if (!meld_readline_m(f, method, s)) {
             return -1;
         }
         if (r->num_lines < MELD_MAX_RACE_LINES) {
             strcpy(r->lines[r->num_lines++], s);
         }
         // line count
-        if (!meld_readline_m(f, s, sizeof(s), method)) {
+        if (!meld_readline_m(f, method, s)) {
             return -1;
         }
         line_count = atoi(s);
@@ -458,7 +446,7 @@ static int meld_read_one_race(FILE* f, int method, tMeld_race* r) {
             snprintf(r->lines[r->num_lines++], MELD_LINE_LEN, "%d", line_count);
         }
         for (k = 0; k < line_count; k++) {
-            if (!meld_readline_m(f, s, sizeof(s), method)) {
+            if (!meld_readline_m(f, method, s)) {
                 return -1;
             }
             if (r->num_lines < MELD_MAX_RACE_LINES) {
@@ -499,9 +487,6 @@ static void meld_build_races(void) {
         int count;
         int idx;
 
-        if (method != 1) {
-            continue;
-        }
         f = meld_open_data(g, "RACES.TXT", "rb");
         if (f == NULL) {
             continue;
@@ -544,17 +529,16 @@ static void meld_build_races(void) {
     // Stable sort by norm then game order.
     qsort(s_races, s_race_count, sizeof(tMeld_race), meld_race_cmp);
 
-    // Record per-slot source game and emit plain-text merged file.
+    // Record per-slot source game and emit method-1 encoded merged file.
     mbuf_init(&buf);
     for (i = 0; i < s_race_count; i++) {
         int l;
         s_race_source_game[i] = s_races[i].game_idx;
         for (l = 0; l < s_races[i].num_lines; l++) {
-            mbuf_append(&buf, s_races[i].lines[l]);
-            mbuf_append(&buf, "\n");
+            mbuf_append_m1(&buf, s_races[i].lines[l]);
         }
     }
-    mbuf_append(&buf, "END\n");
+    mbuf_append_m1(&buf, "END");
 
     s_races_buf = buf.data;
     s_races_len = buf.len;
@@ -575,6 +559,12 @@ typedef struct {
 } tMeld_opponent;
 
 static tMeld_opponent s_oppos[MELD_MAX_OPPONENTS * MELD_MAX_GAMES];
+
+// Pre-computed extra starting-car output slots for each frank_or_anniness (0=Max, 1=Anna).
+// Built in meld_build_opponents when MeldBothStartingCars=1.
+#define MELD_MAX_EXTRA_START 8
+static int s_extra_start_slots[2][MELD_MAX_EXTRA_START];
+static int s_extra_start_counts[2];
 static int s_oppo_raw_count = 0;
 
 // Read one opponent record (its 9 header lines + text chunks) into o.
@@ -588,7 +578,7 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
 
     o->num_lines = 0;
     // name
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     if (strcmp(s, "END") == 0) {
@@ -597,33 +587,33 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
     strcpy(o->name, s);
     strcpy(o->lines[o->num_lines++], s);
     // abbrev
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     strcpy(o->lines[o->num_lines++], s);
     // car number
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     o->car_number = atoi(s);
     strcpy(o->lines[o->num_lines++], s);
     // strength
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     strcpy(o->lines[o->num_lines++], s);
     // net avail
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     strcpy(o->lines[o->num_lines++], s);
     // mug shot
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     strcpy(o->lines[o->num_lines++], s);
     // car file name
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     strcpy(o->lines[o->num_lines++], s);
@@ -635,12 +625,12 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
         o->car_file[0] = 0;
     }
     // stolen car flic
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     strcpy(o->lines[o->num_lines++], s);
     // chunk count
-    if (!meld_readline_m(f, s, sizeof(s), method)) {
+    if (!meld_readline_m(f, method, s)) {
         return -1;
     }
     chunk_count = atoi(s);
@@ -648,19 +638,19 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
     for (j = 0; j < chunk_count; j++) {
         int line_count;
         int k;
-        if (!meld_readline_m(f, s, sizeof(s), method)) {
+        if (!meld_readline_m(f, method, s)) {
             return -1;
         }
         if (o->num_lines < MELD_MAX_OPPO_LINES) {
             strcpy(o->lines[o->num_lines++], s);
         }
-        if (!meld_readline_m(f, s, sizeof(s), method)) {
+        if (!meld_readline_m(f, method, s)) {
             return -1;
         }
         if (o->num_lines < MELD_MAX_OPPO_LINES) {
             strcpy(o->lines[o->num_lines++], s);
         }
-        if (!meld_readline_m(f, s, sizeof(s), method)) {
+        if (!meld_readline_m(f, method, s)) {
             return -1;
         }
         line_count = atoi(s);
@@ -668,7 +658,7 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
             snprintf(o->lines[o->num_lines++], MELD_LINE_LEN, "%d", line_count);
         }
         for (k = 0; k < line_count; k++) {
-            if (!meld_readline_m(f, s, sizeof(s), method)) {
+            if (!meld_readline_m(f, method, s)) {
                 return -1;
             }
             if (o->num_lines < MELD_MAX_OPPO_LINES) {
@@ -677,14 +667,72 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
         }
     }
     o->game_idx = game_idx;
-    // Hash the car TXT file for dedup.
+    // Hash the car TXT file for dedup. Fall back through other game dirs if
+    // the file isn't present locally (e.g. XMASDEMO shares CARSPLAT's CARS/).
     {
         char carpath[MAX_PATH];
         char cars[MAX_PATH];
-        meld_join(cars, sizeof(cars), harness_game_config.game_dirs[game_idx].directory, "DATA" MELD_SEP "CARS");
-        meld_join(carpath, sizeof(carpath), cars, o->car_file);
-        o->car_hash = meld_hash_file(carpath);
+        int g2;
+        o->car_hash = 0;
+        for (g2 = 0; g2 < harness_game_config.game_dirs_count && g2 < MELD_MAX_GAMES; g2++) {
+            meld_join(cars, sizeof(cars), harness_game_config.game_dirs[g2].directory, "DATA" MELD_SEP "CARS");
+            meld_join(carpath, sizeof(carpath), cars, o->car_file);
+            o->car_hash = meld_hash_file(carpath);
+            if (o->car_hash != 0) {
+                break;
+            }
+        }
     }
+    return 1;
+}
+
+// Read frank's and anna's starting car filenames from a game's GENERAL.TXT.
+// LoadGeneralParameters reads 34 data lines before gBasic_car_names[0/1]:
+// 4 scalars + 2 ints + 2x3-ints + 6 floats + 3x3-floats + 14-line branch
+// (7 data + 7 garbage, order varies by sausage_eater_mode but total is same)
+// + 3x3-ints = 34 lines total.
+static int meld_read_general_car_names(int game_idx, char* frank_out, char* anna_out) {
+    FILE* f;
+    char s[MELD_LINE_LEN];
+    int method = s_game_method[game_idx];
+    int saved_enc = gEncryption_method;
+    int i;
+    char tmp[MELD_LINE_LEN];
+    char* tok;
+
+    f = meld_open_data(game_idx, "GENERAL.TXT", "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    for (i = 0; i < 34; i++) {
+        if (!meld_readline_m(f, method, s)) {
+            fclose(f);
+            gEncryption_method = saved_enc;
+            return 0;
+        }
+    }
+    if (!meld_readline_m(f, method, s)) {
+        fclose(f);
+        gEncryption_method = saved_enc;
+        return 0;
+    }
+    strcpy(tmp, s);
+    tok = strtok(tmp, "\t ,/");
+    strncpy(frank_out, tok ? tok : "", 255);
+    frank_out[255] = '\0';
+
+    if (!meld_readline_m(f, method, s)) {
+        fclose(f);
+        gEncryption_method = saved_enc;
+        return 0;
+    }
+    strcpy(tmp, s);
+    tok = strtok(tmp, "\t ,/");
+    strncpy(anna_out, tok ? tok : "", 255);
+    anna_out[255] = '\0';
+
+    fclose(f);
+    gEncryption_method = saved_enc;
     return 1;
 }
 
@@ -704,15 +752,12 @@ static void meld_build_opponents(void) {
         char header[MELD_LINE_LEN];
         int declared;
 
-        if (method != 1) {
-            continue;
-        }
         f = meld_open_data(g, "OPPONENT.TXT", "rb");
         if (f == NULL) {
             continue;
         }
         // count header
-        if (!meld_readline_m(f, header, sizeof(header), method)) {
+        if (!meld_readline_m(f, method, header)) {
             fclose(f);
             continue;
         }
@@ -757,14 +802,14 @@ static void meld_build_opponents(void) {
                     }
                 }
             }
-            // MeldBothStartingCars: keep player-car duplicates for the same
-            // character so both starting cars are available.
+            // MeldBothStartingCars: never dedup player-car entries across
+            // different games — keep each game's starting car distinct.
+            // Only dedup within the same game (same game_idx + same hash).
             if (dup && gMeld_both_starting_cars && s_oppos[i].car_number < 0) {
-                // only dedup if identical car hash AND same name; otherwise keep
                 int true_dup = 0;
                 for (j = 0; j < i; j++) {
                     if (included[j] && s_oppos[j].car_number < 0 &&
-                        strcmp(s_oppos[j].name, s_oppos[i].name) == 0 &&
+                        s_oppos[j].game_idx == s_oppos[i].game_idx &&
                         s_oppos[j].car_hash == s_oppos[i].car_hash) {
                         true_dup = 1;
                         break;
@@ -779,11 +824,13 @@ static void meld_build_opponents(void) {
         }
 
         mbuf_init(&buf);
-        snprintf(numbuf, sizeof(numbuf), "%d\n", out_count);
-        mbuf_append(&buf, numbuf);
+        snprintf(numbuf, sizeof(numbuf), "%d", out_count);
+        mbuf_append_m1(&buf, numbuf);
 
         {
             int slot = 0;
+            s_extra_start_counts[0] = s_extra_start_counts[1] = 0;
+
             for (i = 0; i < s_oppo_raw_count; i++) {
                 int l;
                 if (!included[i]) {
@@ -791,15 +838,58 @@ static void meld_build_opponents(void) {
                 }
                 if (slot < MELD_MAX_OPPONENTS) {
                     s_opponent_source_game[slot] = s_oppos[i].game_idx;
+                    strncpy(s_slot_car_file[slot], s_oppos[i].car_file, 255);
+                    s_slot_car_file[slot][255] = '\0';
                 }
                 slot++;
                 for (l = 0; l < s_oppos[i].num_lines; l++) {
-                    mbuf_append(&buf, s_oppos[i].lines[l]);
-                    mbuf_append(&buf, "\n");
+                    mbuf_append_m1(&buf, s_oppos[i].lines[l]);
+                }
+            }
+
+            // For each secondary game, read its GENERAL.TXT car names and find
+            // the corresponding slots in the merged output.
+            if (gMeld_both_starting_cars) {
+                int g;
+                for (g = 1; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
+                    char frank_car[256], anna_car[256];
+                    int s;
+                    if (!meld_read_general_car_names(g, frank_car, anna_car)) {
+                        continue;
+                    }
+                    for (s = 0; s < slot && s < MELD_MAX_OPPONENTS; s++) {
+                        if (s_opponent_source_game[s] != g) {
+                            continue;
+                        }
+                        if (frank_car[0] && strcasecmp(s_slot_car_file[s], frank_car) == 0) {
+                            int already = 0, k;
+                            for (k = 0; k < s_extra_start_counts[0]; k++) {
+                                if (strcasecmp(s_slot_car_file[s_extra_start_slots[0][k]], frank_car) == 0) {
+                                    already = 1;
+                                    break;
+                                }
+                            }
+                            if (!already && s_extra_start_counts[0] < MELD_MAX_EXTRA_START) {
+                                s_extra_start_slots[0][s_extra_start_counts[0]++] = s;
+                            }
+                        }
+                        if (anna_car[0] && strcasecmp(s_slot_car_file[s], anna_car) == 0) {
+                            int already = 0, k;
+                            for (k = 0; k < s_extra_start_counts[1]; k++) {
+                                if (strcasecmp(s_slot_car_file[s_extra_start_slots[1][k]], anna_car) == 0) {
+                                    already = 1;
+                                    break;
+                                }
+                            }
+                            if (!already && s_extra_start_counts[1] < MELD_MAX_EXTRA_START) {
+                                s_extra_start_slots[1][s_extra_start_counts[1]++] = s;
+                            }
+                        }
+                    }
                 }
             }
         }
-        mbuf_append(&buf, "END\n");
+        mbuf_append_m1(&buf, "END");
     }
 
     s_oppo_buf = buf.data;
@@ -843,7 +933,7 @@ static void meld_build_partshop(void) {
         int dup = 0;
         char s[MELD_LINE_LEN];
 
-        if (method != 1 || !s_game_contributed[g]) {
+        if (!s_game_contributed[g]) {
             continue;
         }
         meld_join(data, sizeof(data), harness_game_config.game_dirs[g].directory, "DATA");
@@ -868,14 +958,14 @@ static void meld_build_partshop(void) {
         }
         for (cat = 0; cat < MELD_PS_CATEGORIES; cat++) {
             int part_count;
-            if (!meld_readline_m(f, s, sizeof(s), method)) {
+            if (!meld_readline_m(f, method, s)) {
                 break;
             }
             part_count = atoi(s);
             for (p = 0; p < part_count; p++) {
                 char* tok;
                 int rank;
-                if (!meld_readline_m(f, s, sizeof(s), method)) {
+                if (!meld_readline_m(f, method, s)) {
                     break;
                 }
                 if (p >= MELD_PS_PARTS) {
@@ -920,16 +1010,16 @@ static void meld_build_partshop(void) {
         return;
     }
     for (cat = 0; cat < MELD_PS_CATEGORIES; cat++) {
-        snprintf(line, sizeof(line), "%d\n", MELD_PS_PARTS);
-        mbuf_append(&buf, line);
+        snprintf(line, sizeof(line), "%d", MELD_PS_PARTS);
+        mbuf_append_m1(&buf, line);
         for (p = 0; p < MELD_PS_PARTS; p++) {
-            snprintf(line, sizeof(line), "%d\t%s\t%d\t%d\t%d\n",
+            snprintf(line, sizeof(line), "%d\t%s\t%d\t%d\t%d",
                 parts[cat][p].rank_required,
                 parts[cat][p].part_name[0] ? parts[cat][p].part_name : "NONE",
                 parts[cat][p].prices[0],
                 parts[cat][p].prices[1],
                 parts[cat][p].prices[2]);
-            mbuf_append(&buf, line);
+            mbuf_append_m1(&buf, line);
         }
     }
     s_partshop_buf = buf.data;
@@ -1048,16 +1138,22 @@ void Meld_Init(void) {
         return;
     }
 
+    LOG_INFO2("Meld_Init: starting with %d game dirs", harness_game_config.game_dirs_count);
+
     gMeld_both_starting_cars = harness_game_config.meld_both_starting_cars;
 
     for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
         s_game_method[g] = meld_detect_method(g);
         s_game_contributed[g] = 0;
+        LOG_INFO3("Meld_Init: game[%d] dir=%s", g, harness_game_config.game_dirs[g].directory);
+        LOG_INFO3("Meld_Init: game[%d] method=%d", g, s_game_method[g]);
     }
 
     meld_build_races();
+    LOG_INFO2("Meld_Init: races built, count=%d", s_race_count);
     if (s_race_count == 0) {
         // Nothing merged; do not activate.
+        LOG_INFO("Meld_Init: no races found, not activating");
         return;
     }
     meld_build_opponents();
@@ -1069,6 +1165,11 @@ void Meld_Init(void) {
     s_active_game = 0;
     gMeld_active = 1;
 
+    // Reset so LoadGeneralParameters re-detects the correct method from the
+    // primary game's GENERAL.TXT (meld_readline_m leaves it set to the last
+    // secondary game's method).
+    gEncryption_method = 0;
+
     LOG_INFO2("Meld active: %d races merged from games", gMeld_total_race_count);
 }
 
@@ -1076,29 +1177,16 @@ void Meld_Init(void) {
 // Merged file accessors
 // ---------------------------------------------------------------------------
 
-static FILE* meld_tmpfile_from(const char* data, size_t len) {
-    FILE* f = tmpfile();
-    if (f == NULL) {
-        return NULL;
-    }
-    if (data != NULL && len > 0) {
-        fwrite(data, 1, len, f);
-    }
-    fflush(f);
-    fseek(f, 0, SEEK_SET);
-    return f;
-}
-
 FILE* Meld_OpenRaceFile(void) {
-    return meld_tmpfile_from(s_races_buf, s_races_len);
+    return fmemopen(s_races_buf, s_races_len, "rb");
 }
 
 FILE* Meld_OpenOpponentFile(void) {
-    return meld_tmpfile_from(s_oppo_buf, s_oppo_len);
+    return fmemopen(s_oppo_buf, s_oppo_len, "rb");
 }
 
 FILE* Meld_OpenPartshopFile(void) {
-    return meld_tmpfile_from(s_partshop_buf, s_partshop_len);
+    return fmemopen(s_partshop_buf, s_partshop_len, "rb");
 }
 
 // ---------------------------------------------------------------------------
@@ -1115,6 +1203,13 @@ void Meld_SetActiveGame_Opponent(int opponent_index) {
     if (opponent_index >= 0 && opponent_index < MELD_MAX_OPPONENTS) {
         s_active_game = s_opponent_source_game[opponent_index];
     }
+}
+
+int Meld_IsOpponentEligible(int opponent_index) {
+    if (!gMeld_active || opponent_index < 0 || opponent_index >= MELD_MAX_OPPONENTS) {
+        return 1;
+    }
+    return s_opponent_source_game[opponent_index] == s_active_game;
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,16 +1289,26 @@ static int meld_needs_patching(const char* tail) {
         return 0;
     }
 
-    // Only patch TXT files in asset-bearing subdirs.
-    if (strstr(tail, "RACES/") || strstr(tail, "RACES\\") ||
-        strstr(tail, "races/") || strstr(tail, "races\\") ||
-        strstr(tail, "CARS/")  || strstr(tail, "CARS\\")  ||
-        strstr(tail, "cars/")  || strstr(tail, "cars\\")  ||
-        strstr(tail, "NONCARS/") || strstr(tail, "NONCARS\\") ||
-        strstr(tail, "noncars/") || strstr(tail, "noncars\\")) {
+    // Patch all TXT files under DATA/ — covers both asset subdirs (RACES/, CARS/,
+    // NONCARS/) and DATA-root files like PEDESTRN.TXT that need method transcode.
+    if (strstr(tail, "DATA/") || strstr(tail, "DATA\\") ||
+        strstr(tail, "data/") || strstr(tail, "data\\")) {
         return 1;
     }
     return 0;
+}
+
+// True if the decoded line content is the file's own identity header (the
+// filename repeated as first data line, used by LoadCar for corruption checks).
+// Resolution-specific car files (e.g. 64X48X8/CARS/) start directly with
+// data and must NOT be treated as identity lines.
+static int meld_is_identity_line(const char* decoded, const char* basename) {
+    int blen = (int)strlen(basename);
+    if (strncasecmp(decoded, basename, blen) != 0) {
+        return 0;
+    }
+    return decoded[blen] == '\0' || decoded[blen] == '\t' || decoded[blen] == ' ' ||
+           decoded[blen] == '\r' || decoded[blen] == '\n' || decoded[blen] == '/';
 }
 
 // Read raw_path, decode @-prefixed lines (method 1), patch conflicting asset
@@ -1215,50 +1320,65 @@ static FILE* meld_patch_txt_serve(const char* raw_path, int game_idx, int method
     char decoded[1024];
     char patched[1024];
 
+    LOG_INFO3("Meld: patching TXT %s (game %d)", raw_path, game_idx);
+
     src = OS_fopen(raw_path, "rt");
     if (src == NULL) {
+        LOG_INFO2("Meld: failed to open TXT for patching: %s", raw_path);
         return NULL;
     }
 
     mbuf_init(&buf);
 
-    while (fgets(line, sizeof(line), src) != NULL) {
-        int is_encoded = (line[0] == '@') && (method == 1);
+    {
+        int data_line_idx = 0;
+        while (fgets(line, sizeof(line), src) != NULL) {
+            int is_encoded = (line[0] == '@') && (method >= 1);
 
-        if (is_encoded) {
-            strncpy(decoded, &line[1], sizeof(decoded) - 1);
-            decoded[sizeof(decoded) - 1] = 0;
-            meld_decode_method1(decoded);
-        } else {
-            strncpy(decoded, line, sizeof(decoded) - 1);
-            decoded[sizeof(decoded) - 1] = 0;
-            meld_strip_eol(decoded);
+            if (is_encoded) {
+                strncpy(decoded, &line[1], sizeof(decoded) - 1);
+                decoded[sizeof(decoded) - 1] = 0;
+                gEncryption_method = method;
+                EncodeLine(decoded);
+            } else {
+                strncpy(decoded, line, sizeof(decoded) - 1);
+                decoded[sizeof(decoded) - 1] = 0;
+                meld_strip_eol(decoded);
+            }
+
+            // The first decoded data line of car/noncar TXT files is the file's own
+            // identity (e.g. "SUBFRAME.TXT"). Patching it would corrupt the game's
+            // corruption check (strcmp(first_line, expected_name)). Write the
+            // canonical filename from the path instead of the decoded content,
+            // because some mods encode trailing non-separator bytes after the name
+            // that strtok does not strip, causing the strcmp to fail.
+            if (is_encoded && data_line_idx == 0 && meld_is_identity_line(decoded, meld_basename(raw_path))) {
+                strncpy(patched, meld_basename(raw_path), sizeof(patched) - 1);
+                patched[sizeof(patched) - 1] = 0;
+            } else {
+                meld_patch_line(decoded, game_idx, patched, sizeof(patched));
+            }
+            if (is_encoded) {
+                data_line_idx++;
+            }
+
+            if (is_encoded) {
+                mbuf_append_m1(&buf, patched);
+            } else {
+                mbuf_append(&buf, patched);
+                mbuf_append(&buf, "\n");
+            }
         }
-
-        meld_patch_line(decoded, game_idx, patched, sizeof(patched));
-
-        if (is_encoded) {
-            // XOR is self-inverse: applying meld_decode_method1 to plaintext
-            // produces the correctly encoded ciphertext for that line length.
-            meld_decode_method1(patched);
-            mbuf_append(&buf, "@");
-            mbuf_append(&buf, patched);
-        } else {
-            mbuf_append(&buf, patched);
-        }
-        mbuf_append(&buf, "\n");
     }
     fclose(src);
+    // Output is always method-1 encoded; restore so the caller can decode it.
+    gEncryption_method = 1;
 
     if (buf.data == NULL) {
         return NULL;
     }
 
-    {
-        FILE* out = meld_tmpfile_from(buf.data, buf.len);
-        free(buf.data);
-        return out;
-    }
+    return fmemopen(buf.data, buf.len, "rb");
 }
 
 // ---------------------------------------------------------------------------
@@ -1356,8 +1476,10 @@ FILE* Meld_fopen(const char* path, const char* mode) {
         }
     }
 
-    // 1. Try the path as-is.
-    {
+    // 1. Try the path as-is. Skip for known conflict assets opened for reading:
+    //    gApplication_path points to the primary game, so "as-is" would always
+    //    resolve to the primary game's copy. Step 2 uses s_active_game first.
+    if (writing || !meld_is_conflict(meld_basename(path))) {
         FILE* f = OS_fopen(path, mode);
         if (f != NULL) {
             return f;
@@ -1398,13 +1520,53 @@ FILE* Meld_fopen(const char* path, const char* mode) {
                 // Phase 6: patch TXT files in RACES/, CARS/, NONCARS/ when
                 // the conflict map has entries (assets differ across games).
                 if (s_conflict_count > 0 && meld_needs_patching(tail)) {
+                    FILE* patched;
+                    LOG_INFO3("Meld_fopen: conflict patch triggered for %s (game %d)", tail, order[g]);
                     fclose(f);
-                    return meld_patch_txt_serve(candidate, order[g], s_game_method[order[g]]);
+                    patched = meld_patch_txt_serve(candidate, order[g], s_game_method[order[g]]);
+                    if (patched != NULL) {
+                        return patched;
+                    }
+                    LOG_WARN2("Meld_fopen: patch failed, serving raw: %s", candidate);
+                    f = OS_fopen(candidate, mode);
+                    if (f != NULL) {
+                        return f;
+                    }
+                    continue;
                 }
                 return f;
             }
         }
     }
 
+    LOG_INFO2("Meld_fopen: not found: %s", path);
     return NULL;
+}
+
+
+// Called from InitGame after cars_available[0] is set to frank_or_anniness.
+// Appends extra starting-car indices (pre-computed by meld_build_opponents)
+// so both games' starting car appears on the change-car screen.
+void Meld_AddBothStartingCars(int frank, int* cars_avail, int* num_cars) {
+    int i;
+    if (!gMeld_active || !gMeld_both_starting_cars || frank < 0 || frank > 1) {
+        return;
+    }
+    for (i = 0; i < s_extra_start_counts[frank]; i++) {
+        if (*num_cars < 60) {
+            cars_avail[(*num_cars)++] = s_extra_start_slots[frank][i];
+        }
+    }
+}
+
+void Meld_Test_AddConflict(const char* basename) {
+    meld_add_conflict(basename);
+}
+
+void Meld_Test_ClearConflicts(void) {
+    s_conflict_count = 0;
+}
+
+FILE* Meld_Test_PatchTxt(const char* path, int game_idx) {
+    return meld_patch_txt_serve(path, game_idx, 1);
 }

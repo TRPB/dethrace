@@ -28,6 +28,7 @@ FILE* Meld_OpenPartshopFile(void);
 void Meld_SetActiveGame(int race_index);
 // Set the active game based on an opponent index (into gOpponents).
 void Meld_SetActiveGame_Opponent(int opponent_index);
+int Meld_IsOpponentEligible(int opponent_index);
 
 // VFS router: intercepts merged files and routes asset loads through the
 // active game dir, then all [Games] dirs in order.
@@ -39,5 +40,15 @@ void Meld_ResolveMusicPath(int track, char* out, size_t len);
 
 // Save-file path (writes the meld-specific "SAVEGAME_M" directory path).
 void Meld_SavePath(int slot, char* out, size_t len);
+
+// Add extra starting-car indices to cars_available for the current character.
+// Call immediately after setting cars_available[0] = frank_or_anniness in InitGame.
+void Meld_AddBothStartingCars(int frank, int* cars_avail, int* num_cars);
+
+// Test helpers: manipulate the conflict map and invoke the patch pipeline
+// directly without a full Meld_Init(). Not for production use.
+void Meld_Test_AddConflict(const char* basename);
+void Meld_Test_ClearConflicts(void);
+FILE* Meld_Test_PatchTxt(const char* path, int game_idx);
 
 #endif
