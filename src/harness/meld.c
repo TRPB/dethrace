@@ -128,10 +128,12 @@ static int s_conflict_count = 0;
 // content, so those games are skipped)
 // ---------------------------------------------------------------------------
 
-// Strip trailing CR/LF in place.
+// Strip trailing CR/LF and non-ASCII garbage bytes in place. Some mod files
+// append high-byte chars after encoded content; the XOR decoder reproduces
+// them faithfully, so strip them here before the decoded string is used.
 static void meld_strip_eol(char* buf) {
     int len = (int)strlen(buf);
-    while (len > 0 && (buf[len - 1] == '\r' || buf[len - 1] == '\n')) {
+    while (len > 0 && (buf[len - 1] == '\r' || buf[len - 1] == '\n' || (unsigned char)buf[len - 1] >= 0x80)) {
         buf[--len] = 0;
     }
 }
@@ -1437,8 +1439,7 @@ static int meld_is_identity_line(const char* decoded, const char* basename) {
         return 0;
     }
     return decoded[blen] == '\0' || decoded[blen] == '\t' || decoded[blen] == ' ' ||
-           decoded[blen] == '\r' || decoded[blen] == '\n' || decoded[blen] == '/' ||
-           (unsigned char)decoded[blen] >= 0x80;
+           decoded[blen] == '\r' || decoded[blen] == '\n' || decoded[blen] == '/';
 }
 
 // Read raw_path, decode @-prefixed lines (method 1), patch conflicting asset
@@ -1470,6 +1471,7 @@ static FILE* meld_patch_txt_serve(const char* raw_path, int game_idx, int method
                 decoded[sizeof(decoded) - 1] = 0;
                 gEncryption_method = method;
                 EncodeLine(decoded);
+                meld_strip_eol(decoded);
             } else {
                 strncpy(decoded, line, sizeof(decoded) - 1);
                 decoded[sizeof(decoded) - 1] = 0;
