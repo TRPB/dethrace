@@ -1499,6 +1499,7 @@ void DoSteeringWheel(tU32 pThe_time) {
         return;
     }
     if (gProgram_state.cockpit_on && gProgram_state.cockpit_image_index >= 0 && gProgram_state.which_view == eView_forward) {
+        int hands_ws_x;
         hands_index = (int)floor(gProgram_state.current_car.number_of_hands_images * ((-gProgram_state.current_car.steering_angle / 10.f + 1.f) / 2.0));
         if (hands_index < 0) {
             hands_index = 0;
@@ -1506,9 +1507,9 @@ void DoSteeringWheel(tU32 pThe_time) {
             hands_index = gProgram_state.current_car.number_of_hands_images - 1;
         }
 #ifdef DETHRACE_FIX_BUGS
-        int hands_ws_x = WsScreenOffsetX();
+        hands_ws_x = WsScreenOffsetX();
 #else
-        int hands_ws_x = 0;
+        hands_ws_x = 0;
 #endif
         hands_image = gProgram_state.current_car.lhands_images[hands_index];
         if (hands_image != NULL) {

@@ -5,7 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#include <direct.h>
+#define unlink _unlink
+#define rmdir _rmdir
+#else
 #include <unistd.h>
+#endif
 
 extern int gEncryption_method;
 extern void EncodeLine(char* pS);
