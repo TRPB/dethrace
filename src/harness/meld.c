@@ -12,7 +12,15 @@ extern int gEncryption_method;
 extern char* GetALineWithNoPossibleService(FILE* pF, unsigned char* pS);
 
 #include <ctype.h>
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+typedef unsigned long uint64_t;
+#define MELD_FNV_OFFSET 2166136261UL
+#define MELD_FNV_PRIME  16777619UL
+#else
 #include <stdint.h>
+#define MELD_FNV_OFFSET 1469598103934665603ULL
+#define MELD_FNV_PRIME  1099511628211ULL
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,11 +131,11 @@ static int meld_readline_m(FILE* f, int method, char* buf) {
 
 static uint64_t meld_fnv1a(const void* data, size_t len) {
     const unsigned char* p = (const unsigned char*)data;
-    uint64_t h = 1469598103934665603ULL;
+    uint64_t h = MELD_FNV_OFFSET;
     size_t i;
     for (i = 0; i < len; i++) {
         h ^= p[i];
-        h *= 1099511628211ULL;
+        h *= MELD_FNV_PRIME;
     }
     return h;
 }
@@ -135,7 +143,7 @@ static uint64_t meld_fnv1a(const void* data, size_t len) {
 // Hash a file's full contents. Returns 0 if the file could not be opened.
 static uint64_t meld_hash_file(const char* path) {
     FILE* f = OS_fopen(path, "rb");
-    uint64_t h = 1469598103934665603ULL;
+    uint64_t h = MELD_FNV_OFFSET;
     unsigned char buf[4096];
     size_t n;
     if (f == NULL) {
@@ -145,7 +153,7 @@ static uint64_t meld_hash_file(const char* path) {
         size_t i;
         for (i = 0; i < n; i++) {
             h ^= buf[i];
-            h *= 1099511628211ULL;
+            h *= MELD_FNV_PRIME;
         }
     }
     fclose(f);
@@ -289,7 +297,16 @@ static void meld_build_conflict_map(void) {
 // ---------------------------------------------------------------------------
 
 static void meld_join(char* dest, size_t len, const char* a, const char* b) {
-    snprintf(dest, len, "%s%s%s", a, MELD_SEP, b);
+    size_t a_len = strlen(a);
+    if (a_len + 1 >= len) {
+        strncpy(dest, a, len - 1);
+        dest[len - 1] = '\0';
+        return;
+    }
+    memcpy(dest, a, a_len);
+    dest[a_len] = MELD_SEP_CH;
+    dest[a_len + 1] = '\0';
+    strncat(dest, b, len - a_len - 2);
 }
 
 // Open DATA/<name> under a specific game directory.
