@@ -37,7 +37,14 @@ int gMeld_primary_race_count = 0;
 #define MELD_MAX_GAMES 10
 #define MELD_MAX_RACES 200
 #define MELD_MAX_RACE_LINES 80
-#define MELD_MAX_OPPONENTS 60
+// Deduped opponent pool size. Melding several installs — plus each racer's
+// per-livery entries (Max Damage alone has ~6 eagle colours per game) — pushes
+// the pool well past a single game's roster, so this must be generous: any
+// opponent beyond it would lose its character id (per-race dedup) and asset
+// routing, breaking mugshots for the overflow racers.
+#define MELD_MAX_OPPONENTS 600
+// Raw opponents read across all games before dedup (>= the deduped pool).
+#define MELD_MAX_RAW_OPPONENTS 600
 #define MELD_MAX_OPPO_LINES 40
 #define MELD_LINE_LEN 512
 #define MELD_MAX_MUSIC 64
@@ -568,7 +575,7 @@ typedef struct {
     int is_placeholder;
 } tMeld_opponent;
 
-static tMeld_opponent s_oppos[MELD_MAX_OPPONENTS * MELD_MAX_GAMES];
+static tMeld_opponent s_oppos[MELD_MAX_RAW_OPPONENTS];
 
 // Pre-computed extra starting-car output slots for each frank_or_anniness (0=Max, 1=Anna).
 // Built in meld_build_opponents when MeldBothStartingCars=1.
@@ -807,7 +814,7 @@ static void meld_build_opponents(void) {
     // (car_number < 0) and cops (500/501) dedup by car_hash only.
     // Mark included entries.
     {
-        static int included[MELD_MAX_OPPONENTS * MELD_MAX_GAMES];
+        static int included[MELD_MAX_RAW_OPPONENTS];
         for (i = 0; i < s_oppo_raw_count; i++) {
             int dup = 0;
             int special = (s_oppos[i].car_number < 0 || s_oppos[i].car_number == 500 || s_oppos[i].car_number == 501);

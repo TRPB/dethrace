@@ -369,6 +369,9 @@ int ChooseOpponent(int pNastiness, int* pHad_scum) {
     int temp_array[256];
     int variant_seen[256];
     const int temp_capacity = (int)(sizeof(temp_array) / sizeof(temp_array[0]));
+    // The player's own racer can appear as several livery variants when
+    // melding; exclude every variant so the player never races themselves.
+    int player_cid = Meld_OpponentCharacterId(gProgram_state.current_car.index);
 #else
     int temp_array[40];
 #endif
@@ -377,6 +380,9 @@ int ChooseOpponent(int pNastiness, int* pHad_scum) {
     for (i = 0; i < gNumber_of_racers; ++i) {
         if (gOpponents[i].strength_rating == pNastiness
             && gProgram_state.current_car.index != i
+#ifdef DETHRACE_FIX_BUGS
+            && !(player_cid >= 0 && Meld_OpponentCharacterId(i) == player_cid)
+#endif
             && !gOpponents[i].picked
             && Meld_IsOpponentEligible(i)
             && (gOpponents[i].car_number >= 0 || !*pHad_scum)) {
