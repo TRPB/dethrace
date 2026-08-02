@@ -26,25 +26,18 @@ typedef unsigned long uint64_t;
 #include <string.h>
 
 #ifdef _WIN32
-#include <windows.h>
 #define MELD_SEP "\\"
 #define MELD_SEP_CH '\\'
 
 static FILE* meld_fmemopen(void* buf, size_t size, const char* mode) {
-    char tmp_dir[MAX_PATH];
-    char tmp_path[MAX_PATH];
+    char* name = _tempnam(NULL, "mld");
     FILE* f;
     (void)mode;
-    if (GetTempPathA(sizeof(tmp_dir), tmp_dir) == 0) {
+    if (name == NULL) {
         return NULL;
     }
-    if (GetTempFileNameA(tmp_dir, "mld", 0, tmp_path) == 0) {
-        return NULL;
-    }
-    f = fopen(tmp_path, "w+bTD");
-    if (f == NULL) {
-        f = fopen(tmp_path, "w+b");
-    }
+    f = fopen(name, "w+b");
+    free(name);
     if (f == NULL) {
         return NULL;
     }
@@ -393,11 +386,12 @@ static void mbuf_append(tMeld_buf* b, const char* s) {
         return;
     }
     if (b->len + sl + 1 > b->cap) {
+        char* nd;
         size_t newcap = b->cap * 2;
         while (b->len + sl + 1 > newcap) {
             newcap *= 2;
         }
-        char* nd = (char*)realloc(b->data, newcap);
+        nd = (char*)realloc(b->data, newcap);
         if (nd == NULL) {
             return;
         }
