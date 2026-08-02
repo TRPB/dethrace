@@ -10,6 +10,19 @@
 #include <direct.h>
 #define unlink _unlink
 #define rmdir _rmdir
+static char* mkdtemp(char* tmpl) {
+    char* name = _tempnam(NULL, "test_meld_");
+    if (name == NULL) {
+        return NULL;
+    }
+    strncpy(tmpl, name, 255);
+    tmpl[255] = 0;
+    free(name);
+    if (_mkdir(tmpl) != 0) {
+        return NULL;
+    }
+    return tmpl;
+}
 #else
 #include <unistd.h>
 #endif
