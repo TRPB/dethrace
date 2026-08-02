@@ -90,10 +90,6 @@ StealworthyRankLimitDisable = 1
 NumSkids = 65535
 ```
 
-## Note on Windows build
-
-I don't have a Windows machine to build on so the provided .exe is cross compiled from Linux. I have tested it under Wine and it works fine but YMMV. 
-
 ## Bug reporting
 
 Do not report bugs related to these changes upstream on Deathrace, if you're unsure, try to replicate the issue on the actual deathrace release, if it still happens, report there, if not, report here. 
