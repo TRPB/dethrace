@@ -26,8 +26,33 @@ typedef unsigned long uint64_t;
 #include <string.h>
 
 #ifdef _WIN32
+#include <windows.h>
 #define MELD_SEP "\\"
 #define MELD_SEP_CH '\\'
+
+static FILE* meld_fmemopen(void* buf, size_t size, const char* mode) {
+    char tmp_dir[MAX_PATH];
+    char tmp_path[MAX_PATH];
+    FILE* f;
+    (void)mode;
+    if (GetTempPathA(sizeof(tmp_dir), tmp_dir) == 0) {
+        return NULL;
+    }
+    if (GetTempFileNameA(tmp_dir, "mld", 0, tmp_path) == 0) {
+        return NULL;
+    }
+    f = fopen(tmp_path, "w+bTD");
+    if (f == NULL) {
+        f = fopen(tmp_path, "w+b");
+    }
+    if (f == NULL) {
+        return NULL;
+    }
+    fwrite(buf, 1, size, f);
+    rewind(f);
+    return f;
+}
+#define fmemopen meld_fmemopen
 #else
 #define MELD_SEP "/"
 #define MELD_SEP_CH '/'
@@ -1328,6 +1353,12 @@ static void meld_patch_line(const char* line, int game_idx, char* out, size_t ou
     char* const qend = out + outsize - 1;
 
     while (*p && q < qend) {
+        const char* tok_start;
+        int tok_len;
+        char tok[MELD_CONFLICT_NAMELEN];
+        char* dot;
+        int copy_len;
+
         // Pass through separators unchanged.
         if (*p == ' ' || *p == '\t' || *p == ',' || *p == '/' ||
             *p == '\r' || *p == '\n') {
@@ -1336,20 +1367,19 @@ static void meld_patch_line(const char* line, int game_idx, char* out, size_t ou
         }
 
         // Collect a token (run of non-separator chars).
-        const char* tok_start = p;
+        tok_start = p;
         while (*p && *p != ' ' && *p != '\t' && *p != ',' &&
                *p != '/' && *p != '\r' && *p != '\n') {
             p++;
         }
-        int tok_len = (int)(p - tok_start);
+        tok_len = (int)(p - tok_start);
 
         if (tok_len >= 5 && tok_len < MELD_CONFLICT_NAMELEN) {
-            char tok[MELD_CONFLICT_NAMELEN];
             memcpy(tok, tok_start, tok_len);
             tok[tok_len] = 0;
 
             // Must have a .ext of 2-4 chars.
-            char* dot = strrchr(tok, '.');
+            dot = strrchr(tok, '.');
             if (dot && dot != tok && (int)strlen(dot + 1) >= 2 &&
                 (int)strlen(dot + 1) <= 4 && meld_is_conflict(tok)) {
                 int written = snprintf(q, (size_t)(qend - q), "%d:%s", game_idx, tok);
@@ -1361,7 +1391,7 @@ static void meld_patch_line(const char* line, int game_idx, char* out, size_t ou
         }
 
         // Not a conflicting filename; copy the token verbatim.
-        int copy_len = tok_len;
+        copy_len = tok_len;
         if (q + copy_len > qend) {
             copy_len = (int)(qend - q);
         }
@@ -1556,9 +1586,11 @@ FILE* Meld_fopen(const char* path, const char* mode) {
         int n_game = base[0] - '0';
         if (n_game >= 0 && n_game < harness_game_config.game_dirs_count) {
             const char* real_base = base + 2;
-            // Reconstruct real path: same directory part, with the "N:" prefix stripped.
             size_t dir_len = (size_t)(base - path);
             char real_path[MAX_PATH];
+            char tail[MAX_PATH];
+            char candidate[MAX_PATH];
+            // Reconstruct real path: same directory part, with the "N:" prefix stripped.
             if (dir_len < sizeof(real_path) - 1) {
                 memcpy(real_path, path, dir_len);
                 real_path[dir_len] = 0;
@@ -1567,9 +1599,7 @@ FILE* Meld_fopen(const char* path, const char* mode) {
                 strncpy(real_path, real_base, sizeof(real_path) - 1);
                 real_path[sizeof(real_path) - 1] = 0;
             }
-            char tail[MAX_PATH];
             meld_relative_tail(real_path, tail, sizeof(tail));
-            char candidate[MAX_PATH];
             meld_join(candidate, sizeof(candidate), harness_game_config.game_dirs[n_game].directory, tail);
             {
                 FILE* f = OS_fopen(candidate, mode);
