@@ -1,9 +1,10 @@
 # Dethrace Slop Pack
 
+Modded [Dethrace](https://github.com/dethrace-labs/dethrace) with several tweaks to make the game more to my liking.
 
-Modded [Dethrace](https://github.com/dethrace-labs/dethrace) with several tweaks to make the game more to my liking. No pull requests to upstream because this is heavily AI assisted and just for fun. A wishlist for what I want in the real project with a dirty AI implementation.
+No pull requests to upstream because this is heavily AI assisted. The communtiy are (rightly) dubious of AI pull requests and I am not at a level in C that I am comfortable pushing them upstream. 
 
-Consider this more like a mod than an attempt to improve Dethrace itself, let's leave that project pure.
+So consdider this more of a mod that is just for fun: A wishlist for what I want in the real project with a dirty AI implementation rather than anything that will likely make it into the project itself. If upsteam developers find anything useful, they are of course welcome to merge it. That said, for just playing the game, it improves my experience massively.
 
 ![Screenshot 1](docs/screenshot1.png)
 ![Screenshot 2](docs/screenshot2.png)
@@ -88,6 +89,10 @@ StealworthyRankLimitDisable = 1
 ; Maximum number of skid/blood/oil decals before old ones are recycled (default 100, max 65535)
 NumSkids = 65535
 ```
+
+## Note on Windows build
+
+I don't have a Windows machine to build on so the provided .exe is cross compiled from Linux. I have tested it under Wine and it works fine but YMMV. 
 
 ## Bug reporting
 
