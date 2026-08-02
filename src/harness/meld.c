@@ -1437,7 +1437,8 @@ static int meld_is_identity_line(const char* decoded, const char* basename) {
         return 0;
     }
     return decoded[blen] == '\0' || decoded[blen] == '\t' || decoded[blen] == ' ' ||
-           decoded[blen] == '\r' || decoded[blen] == '\n' || decoded[blen] == '/';
+           decoded[blen] == '\r' || decoded[blen] == '\n' || decoded[blen] == '/' ||
+           (unsigned char)decoded[blen] >= 0x80;
 }
 
 // Read raw_path, decode @-prefixed lines (method 1), patch conflicting asset
