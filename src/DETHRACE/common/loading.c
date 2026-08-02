@@ -2797,8 +2797,23 @@ void LoadRaceInfo(int pRace_index, tRace_info* pRace_info) {
         }
         for (i = 0; i < pRace_info->number_of_racers; i++) {
             PossibleService();
+#ifdef DETHRACE_FIX_BUGS
+            // With melding, a race can include opponents from other games, so
+            // load each mugshot flic from that opponent's own game dir (as
+            // LoadOpponentsCars does for cars). This avoids picking up a
+            // same-named flic from the race's game. Restore the race's game
+            // afterwards for the remaining race-asset loads.
+            if (gMeld_active) {
+                Meld_SetActiveGame_Opponent(pRace_info->opponent_list[i].index);
+            }
+#endif
             LoadOpponentMugShot(pRace_info->opponent_list[i].index);
         }
+#ifdef DETHRACE_FIX_BUGS
+        if (gMeld_active) {
+            Meld_SetActiveGame(pRace_index);
+        }
+#endif
     }
     GetALineAndDontArgue(f, s);
     str = strtok(s, "\t ,/");

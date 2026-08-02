@@ -61,6 +61,12 @@ static int s_race_source_game[MELD_MAX_RACES];
 static int s_opponent_source_game[MELD_MAX_OPPONENTS];
 // Opponent slot -> car_file name (first token of car file line).
 static char s_slot_car_file[MELD_MAX_OPPONENTS][256];
+// Opponent slot -> character name (used to group car variants of one racer).
+static char s_slot_name[MELD_MAX_OPPONENTS][32];
+// Opponent slot -> character id: variants of the same racer (same name but a
+// different car per game) share an id, so a race can pick a character only
+// once. Cops (car 500/501) are exempt and get -1.
+static int s_opponent_char_id[MELD_MAX_OPPONENTS];
 
 // Currently active game for VFS routing.
 static int s_active_game = 0;
@@ -556,6 +562,10 @@ typedef struct {
     uint64_t car_hash;
     char name[256];
     int car_number;
+    // Set when the mugshot flic equals the stolen-car flic (e.g. both
+    // EAGLERED.FLI): the demos strip an opponent's graphics to a shared
+    // placeholder, so this record's art is not really its own.
+    int is_placeholder;
 } tMeld_opponent;
 
 static tMeld_opponent s_oppos[MELD_MAX_OPPONENTS * MELD_MAX_GAMES];
@@ -681,6 +691,23 @@ static int meld_read_one_opponent(FILE* f, int method, int game_idx, tMeld_oppon
             if (o->car_hash != 0) {
                 break;
             }
+        }
+    }
+    // A racer's mugshot flic (line 5) and stolen-car flic (line 7) are normally
+    // distinct (a portrait vs the car). The demos replace both with one shared
+    // placeholder (e.g. EAGLERED.FLI), so equal flics mark a degraded record.
+    o->is_placeholder = 0;
+    if (o->num_lines > 7) {
+        char mug[MELD_LINE_LEN];
+        char stolen[MELD_LINE_LEN];
+        char* mug_tok;
+        char* stolen_tok;
+        strcpy(mug, o->lines[5]);
+        strcpy(stolen, o->lines[7]);
+        mug_tok = strtok(mug, "\t ,/");
+        stolen_tok = strtok(stolen, "\t ,/");
+        if (mug_tok != NULL && stolen_tok != NULL && strcasecmp(mug_tok, stolen_tok) == 0) {
+            o->is_placeholder = 1;
         }
     }
     return 1;
@@ -817,6 +844,30 @@ static void meld_build_opponents(void) {
                 }
                 dup = true_dup;
             }
+            // Drop a degraded demo record: its graphics are a shared
+            // placeholder (mugshot flic == stolen-car flic, e.g. both
+            // EAGLERED.FLI) AND its car is a generic model reused by other
+            // racers, AND a proper record for the same racer exists elsewhere.
+            // Requiring a generic model keeps genuine mod cars (a unique model
+            // that merely lacks its own flics) and demo-only racers.
+            if (!dup && s_oppos[i].is_placeholder) {
+                int has_real = 0;
+                int generic_model = 0;
+                for (j = 0; j < s_oppo_raw_count; j++) {
+                    if (j == i) {
+                        continue;
+                    }
+                    if (!s_oppos[j].is_placeholder && strcmp(s_oppos[j].name, s_oppos[i].name) == 0) {
+                        has_real = 1;
+                    }
+                    if (s_oppos[i].car_hash != 0 && s_oppos[j].car_hash == s_oppos[i].car_hash && strcmp(s_oppos[j].name, s_oppos[i].name) != 0) {
+                        generic_model = 1;
+                    }
+                }
+                if (has_real && generic_model) {
+                    dup = 1;
+                }
+            }
             included[i] = !dup;
             if (included[i]) {
                 out_count++;
@@ -840,6 +891,23 @@ static void meld_build_opponents(void) {
                     s_opponent_source_game[slot] = s_oppos[i].game_idx;
                     strncpy(s_slot_car_file[slot], s_oppos[i].car_file, 255);
                     s_slot_car_file[slot][255] = '\0';
+                    strncpy(s_slot_name[slot], s_oppos[i].name, sizeof(s_slot_name[slot]) - 1);
+                    s_slot_name[slot][sizeof(s_slot_name[slot]) - 1] = '\0';
+                    // Assign the character id: reuse an earlier slot's id when
+                    // the name matches (a car variant of the same racer),
+                    // otherwise start a new group. Cops may repeat, so exempt.
+                    if (s_oppos[i].car_number == 500 || s_oppos[i].car_number == 501) {
+                        s_opponent_char_id[slot] = -1;
+                    } else {
+                        int p;
+                        s_opponent_char_id[slot] = slot;
+                        for (p = 0; p < slot; p++) {
+                            if (s_opponent_char_id[p] >= 0 && strcmp(s_slot_name[p], s_slot_name[slot]) == 0) {
+                                s_opponent_char_id[slot] = s_opponent_char_id[p];
+                                break;
+                            }
+                        }
+                    }
                 }
                 slot++;
                 for (l = 0; l < s_oppos[i].num_lines; l++) {
@@ -1206,10 +1274,23 @@ void Meld_SetActiveGame_Opponent(int opponent_index) {
 }
 
 int Meld_IsOpponentEligible(int opponent_index) {
+    // Every melded opponent is eligible for every race, regardless of which
+    // game it came from, so races mix Carmageddon and Splat Pack racers
+    // freely. Rank/difficulty is still enforced by the base game's strength
+    // bands (ChooseOpponent), and each opponent's assets are loaded from its
+    // own game dir via Meld_SetActiveGame_Opponent.
+    (void)opponent_index;
+    return 1;
+}
+
+int Meld_OpponentCharacterId(int opponent_index) {
+    // Returns a character group id shared by every car variant of one racer,
+    // for per-race dedup. Returns -1 when not melding, out of range, or for
+    // racers that may legitimately repeat (cops).
     if (!gMeld_active || opponent_index < 0 || opponent_index >= MELD_MAX_OPPONENTS) {
-        return 1;
+        return -1;
     }
-    return s_opponent_source_game[opponent_index] == s_active_game;
+    return s_opponent_char_id[opponent_index];
 }
 
 // ---------------------------------------------------------------------------

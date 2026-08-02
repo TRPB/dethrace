@@ -363,7 +363,15 @@ void DoProgramDemo(void) {
 int ChooseOpponent(int pNastiness, int* pHad_scum) {
     int i;
     int count;
+#ifdef DETHRACE_FIX_BUGS
+    // Melding several installs can grow the pool well past the stock 40, so
+    // size the candidate lists generously and guard against overflow below.
+    int temp_array[256];
+    int variant_seen[256];
+    const int temp_capacity = (int)(sizeof(temp_array) / sizeof(temp_array[0]));
+#else
     int temp_array[40];
+#endif
 
     count = 0;
     for (i = 0; i < gNumber_of_racers; ++i) {
@@ -372,11 +380,59 @@ int ChooseOpponent(int pNastiness, int* pHad_scum) {
             && !gOpponents[i].picked
             && Meld_IsOpponentEligible(i)
             && (gOpponents[i].car_number >= 0 || !*pHad_scum)) {
+#ifdef DETHRACE_FIX_BUGS
+            // A character whose car differs between melded installs appears in
+            // the pool once per distinct car (e.g. Wanda Lust drives MERC.TXT
+            // in Carmageddon but SPAGHETI.TXT in the demos). Meld groups those
+            // variants under one character id; collapse them to a single
+            // candidate, keeping one uniformly at random, so the character
+            // isn't over-represented in the pick and can only enter a race
+            // once. A -1 id means "not melding" or a racer that may repeat.
+            int cid = Meld_OpponentCharacterId(i);
+            if (cid >= 0) {
+                int c;
+                int variant = -1;
+                for (c = 0; c < count; c++) {
+                    if (Meld_OpponentCharacterId(temp_array[c]) == cid) {
+                        variant = c;
+                        break;
+                    }
+                }
+                if (variant >= 0) {
+                    variant_seen[variant]++;
+                    if (IRandomBetween(0, variant_seen[variant] - 1) == 0) {
+                        temp_array[variant] = i;
+                    }
+                    continue;
+                }
+                if (count < temp_capacity) {
+                    variant_seen[count] = 1;
+                }
+            }
+            if (count >= temp_capacity) {
+                continue;
+            }
+#endif
             temp_array[count++] = i;
         }
     }
     i = temp_array[IRandomBetween(0, count - 1)];
     gOpponents[i].picked = 1;
+#ifdef DETHRACE_FIX_BUGS
+    // Mark every car variant of the chosen character as picked too, so a
+    // different car of the same character can't be drawn in a later band.
+    {
+        int cid = Meld_OpponentCharacterId(i);
+        if (cid >= 0) {
+            int k;
+            for (k = 0; k < gNumber_of_racers; k++) {
+                if (k != i && Meld_OpponentCharacterId(k) == cid) {
+                    gOpponents[k].picked = 1;
+                }
+            }
+        }
+    }
+#endif
     if (gOpponents[i].car_number < 0) {
         *pHad_scum = 1;
     }

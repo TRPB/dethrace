@@ -29,6 +29,10 @@ void Meld_SetActiveGame(int race_index);
 // Set the active game based on an opponent index (into gOpponents).
 void Meld_SetActiveGame_Opponent(int opponent_index);
 int Meld_IsOpponentEligible(int opponent_index);
+// Character group id shared by every car variant of one racer (same racer,
+// different car per game), so a race picks a character at most once. Returns
+// -1 when not melding or for racers that may repeat (cops).
+int Meld_OpponentCharacterId(int opponent_index);
 
 // VFS router: intercepts merged files and routes asset loads through the
 // active game dir, then all [Games] dirs in order.
