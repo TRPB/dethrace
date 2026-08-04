@@ -27,6 +27,7 @@
 #include "world.h"
 #include <stdlib.h>
 
+
 // GLOBAL: CARM95 0x0050f198
 int gGrid_number_colour[4] = { 49u, 201u, 1u, 201u };
 
@@ -1471,7 +1472,6 @@ int DownClickOpp(int* pCurrent_choice, int* pCurrent_mode, int pX_offset, int pY
 // IDA: void __cdecl SelectRaceStart()
 // FUNCTION: CARM95 0x004513ec
 void SelectRaceStart(void) {
-
     DrawSceneyMappyInfoVieweyThing();
     PrintMemoryDump(0, "INSIDE START RACE");
 }
@@ -1544,6 +1544,15 @@ void SelectRaceDraw(int pCurrent_choice, int pCurrent_mode) {
     tU32* test;
     // GLOBAL: CARM95 0x536430
     static tU32 test2;
+
+#if defined(DETHRACE_FIX_BUGS)
+    if (Meld_IsArenaTrack()) {
+        Meld_DrawArenaMapPanel(gBack_screen, gCurrent_race.map_image,
+            gRender_palette, gCurrent_palette,
+            gCurrent_graf_data->start_race_panel_left, gCurrent_graf_data->start_race_panel_top,
+            gCurrent_graf_data->start_race_panel_right, gCurrent_graf_data->start_race_panel_bottom);
+    }
+#endif
 
     if (gProgram_state.view_type == eVT_Opponents) {
         the_opponent = &gOpponents[gCurrent_race.opponent_list[gOpponent_index].index];

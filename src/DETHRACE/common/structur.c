@@ -656,6 +656,12 @@ void DoGame(void) {
                             && gProgram_state.prog_status == eProg_game_ongoing
                             && !gAbandon_game);
                     } else {
+#if defined(DETHRACE_FIX_BUGS)
+                        if (Meld_IsArenaTrack()) {
+                            SortOpponents();
+                            options_result = eSO_continue;
+                        } else
+#endif
                         do {
                             options_result = DoGridPosition();
                             if (options_result == eSO_main_menu_invoked) {

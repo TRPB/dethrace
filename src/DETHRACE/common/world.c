@@ -3176,6 +3176,9 @@ void FreeTrack(tTrack_spec* pTrack_spec) {
     PossibleService();
     if (gCurrent_race.map_image != NULL) {
         BrPixelmapFree(gCurrent_race.map_image);
+#if defined(DETHRACE_FIX_BUGS)
+        gCurrent_race.map_image = NULL;
+#endif
     }
     if (gProgram_state.special_volume_count != 0) {
         BrMemFree(gProgram_state.special_volumes);

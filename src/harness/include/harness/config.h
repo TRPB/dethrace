@@ -84,6 +84,10 @@ typedef struct tHarness_game_config {
 
     int meld;
     int meld_both_starting_cars;
+    int meld_net_races;
+    // Absolute path to the directory containing the game executable.
+    // Files under <meld_overlay_dir>/DATA/ override all game dirs.
+    char meld_overlay_dir[MAX_PATH];
 } tHarness_game_config;
 
 extern tHarness_game_info harness_game_info;

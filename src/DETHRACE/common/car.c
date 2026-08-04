@@ -16,6 +16,7 @@
 #include "graphics.h"
 #include "harness/config.h"
 #include "harness/hooks.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "netgame.h"
 #include "network.h"
@@ -626,6 +627,14 @@ void SetInitialPosition(tRace_info* pThe_race, int pCar_index, int pGrid_index) 
     car = pThe_race->opponent_list[pCar_index].car_spec;
     BrMatrix34Identity(&car_actor->t.t.mat);
     place_on_grid = 1;
+#if defined(DETHRACE_FIX_BUGS)
+    if (gMeld_use_net_starts && pThe_race->number_of_net_start_points != 0) {
+        int idx = pCar_index % pThe_race->number_of_net_start_points;
+        BrVector3Copy(&car_actor->t.t.translate.t, &pThe_race->net_starts[idx].pos);
+        initial_yaw = BrDegreeToAngle(pThe_race->net_starts[idx].yaw);
+        place_on_grid = 0;
+    } else
+#endif
     if (gNet_mode != eNet_mode_none && !gCurrent_net_game->options.grid_start && pThe_race->number_of_net_start_points != 0) {
         start_i = i = IRandomBetween(0, pThe_race->number_of_net_start_points - 1);
         do {
@@ -3304,10 +3313,14 @@ int CollCheck(tCollision_info* c, br_scalar dt) {
             if (c->driver >= eDriver_net_human) {
                 BrVector3Scale(&normal_force, &normal_force, gDefensive_powerup_factor[CAR(c)->power_up_levels[0]]);
             }
-            if (c->driver < eDriver_net_human) {
+            if (c->driver < eDriver_net_human
+#if defined(DETHRACE_FIX_BUGS)
+                && !(gMeld_use_net_starts && c->driver == eDriver_oppo)
+#endif
+            ) {
                 BrVector3Scale(&normal_force, &normal_force, 0.01f);
             } else {
-                BrVector3Scale(&normal_force, &normal_force, 0.75f);
+                BrVector3Scale(&normal_force, &normal_force, gMeld_use_net_starts && c->driver == eDriver_oppo ? 2.0f : 0.75f);
             }
             if (
 #if defined(DETHRACE_FIX_BUGS)
@@ -3316,7 +3329,11 @@ int CollCheck(tCollision_info* c, br_scalar dt) {
                 c->driver >= eDriver_oppo &&
 #endif
                 (CAR(c)->invulnerable
-                    || (c->driver < eDriver_net_human && (c->driver != eDriver_oppo || PointOutOfSight(&c->pos, 150.0f)))
+                    || (c->driver < eDriver_net_human && (c->driver != eDriver_oppo || (
+#if defined(DETHRACE_FIX_BUGS)
+                        !gMeld_use_net_starts &&
+#endif
+                        PointOutOfSight(&c->pos, 150.0f))))
                     || ((v_diff = (CAR(c)->pre_car_col_velocity.v[1] - c->v.v[1]) * gDefensive_powerup_factor[CAR(c)->power_up_levels[0]]) >= -20.0f)
                     || CAR(c)->number_of_wheels_on_ground >= 3)) {
                 CrushAndDamageCar(CAR(c), &dir, &normal_force, NULL);
@@ -3625,7 +3642,11 @@ void CrushAndDamageCar(tCar_spec* c, br_vector3* pPosition, br_vector3* pForce_c
     }
     if (c->driver == eDriver_oppo) {
         BrVector3Sub(&car_to_cam, &c->pos, (br_vector3*)gCamera_to_world.m[3]);
+#if defined(DETHRACE_FIX_BUGS)
+        if (BrVector3LengthSquared(&car_to_cam) > 200.0f && !gMeld_use_net_starts) {
+#else
         if (BrVector3LengthSquared(&car_to_cam) > 200.0f) {
+#endif
             return;
         }
     }

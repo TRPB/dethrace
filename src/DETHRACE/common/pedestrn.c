@@ -1653,7 +1653,11 @@ tPed_hit_position MoveToEdgeOfCar(tPedestrian_data* pPedestrian, tCollision_info
 // FUNCTION: CARM95 0x0045c0db
 void CheckLastPed(void) {
 
-    if (gNet_mode == eNet_mode_none && gProgram_state.peds_killed >= gTotal_peds) {
+    if (gNet_mode == eNet_mode_none
+#if defined(DETHRACE_FIX_BUGS)
+        && gTotal_peds > 0
+#endif
+        && gProgram_state.peds_killed >= gTotal_peds) {
         NewTextHeadupSlot(eHeadupSlot_misc, 0, 5000, -kFont_MEDIUMHD, GetMiscString(kMiscString_EveryPedestrianWasted));
         RaceCompleted(eRace_over_peds);
     }

@@ -2688,6 +2688,7 @@ void LoadRaces(tRace_list_spec* pRace_list, int* pCount, int pRace_type_index) {
             pRace_list[i].best_rank = pRace_list[i + 3].suggested_rank + 1;
         }
     }
+
 }
 
 // IDA: void __usercall UnlockOpponentMugshot(int pIndex@<EAX>)
@@ -2761,7 +2762,7 @@ void LoadRaceInfo(int pRace_index, tRace_info* pRace_info) {
     tText_chunk* the_chunk;
 
 #ifdef DETHRACE_FIX_BUGS
-    if (gMeld_active) {
+    if (gMeld_active || gMeld_net_races_active) {
         Meld_SetActiveGame(pRace_index);
     }
 #endif
@@ -2810,11 +2811,16 @@ void LoadRaceInfo(int pRace_index, tRace_info* pRace_info) {
             LoadOpponentMugShot(pRace_info->opponent_list[i].index);
         }
 #ifdef DETHRACE_FIX_BUGS
-        if (gMeld_active) {
+        if (gMeld_active || gMeld_net_races_active) {
             Meld_SetActiveGame(pRace_index);
         }
 #endif
     }
+#ifdef DETHRACE_FIX_BUGS
+    if (pRace_info->map_image != NULL) { BrPixelmapFree(pRace_info->map_image); pRace_info->map_image = NULL; }
+    { const char* pn = Meld_ArenaMapPixName();
+      if (pn != NULL && pn[0] != '\0' && !Meld_ArenaHasSceneFli()) { pRace_info->map_image = LoadPixelmap((char*)pn); } }
+#endif
     GetALineAndDontArgue(f, s);
     str = strtok(s, "\t ,/");
     strcpy(pRace_info->track_file_name, str);

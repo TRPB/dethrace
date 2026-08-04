@@ -662,6 +662,9 @@ void InitialiseApplication(int pArgc, char** pArgv) {
     if (harness_game_config.meld && harness_game_config.game_dirs_count > 1) {
         Meld_Init();
     }
+    if (harness_game_config.meld_net_races) {
+        Meld_NetRaces_Init();
+    }
 #endif
     LoadOpponents();
     LoadPowerups();
@@ -783,7 +786,7 @@ void DisposeGameIfNecessary(void) {
 // FUNCTION: CARM95 0x004bc93a
 void LoadInTrack(void) {
 #ifdef DETHRACE_FIX_BUGS
-    if (gMeld_active) {
+    if (gMeld_active || gMeld_net_races_active) {
         Meld_SetActiveGame(gProgram_state.current_race_index);
     }
 #endif
@@ -897,6 +900,11 @@ void InitRace(void) {
     SaveShadeTables();
     gCountdown = 7;
     gTimer = 1000 * gCurrent_race.initial_timer[gProgram_state.skill_level];
+#if defined(DETHRACE_FIX_BUGS)
+    if (Meld_IsArenaTrack() && !gNet_mode) {
+        gTimer = 3 * 60 * 1000;
+    }
+#endif
     gLap = 1;
     gTotal_laps = gCurrent_race.total_laps;
     gCheckpoint = 1;

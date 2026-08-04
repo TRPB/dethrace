@@ -10,6 +10,7 @@
 #include "globvrkm.h"
 #include "globvrme.h"
 #include "globvrpb.h"
+#include "harness/meld.h"
 #include "harness/trace.h"
 #include "loading.h"
 #include "oppoproc.h"
@@ -1049,6 +1050,41 @@ tS16 CalcNextTrailSection(tOpponent_spec* pOpponent_spec, int pSection) {
     return section_no + 15001;
 }
 
+#if defined(DETHRACE_FIX_BUGS)
+static void ArenaForcePursuit(tOpponent_spec* pOpponent_spec) {
+    int n = gProgram_state.AI_vehicles.number_of_opponents;
+    tCar_spec* target;
+    int pool_size = 1 + n - 1; /* player + every other AI */
+    int pick = IRandomBetween(0, pool_size - 1);
+    if (pick == 0) {
+        target = &gProgram_state.current_car;
+    } else {
+        int k = 0;
+        int j;
+        target = &gProgram_state.current_car; /* fallback */
+        for (j = 0; j < n; j++) {
+            if (gProgram_state.AI_vehicles.opponents[j].car_spec == pOpponent_spec->car_spec) {
+                continue;
+            }
+            if (k == pick - 1) {
+                target = gProgram_state.AI_vehicles.opponents[j].car_spec;
+                break;
+            }
+            k++;
+        }
+    }
+    gOpponents[pOpponent_spec->index].psyche.grudge_against_player = 20;
+    NewObjective(pOpponent_spec, eOOT_pursue_and_twat, target);
+}
+
+static void ArenaForceDirectLineOfSight(tOpponent_spec* pOpponent_spec) {
+    tPursue_car_data* d = &pOpponent_spec->pursue_car_data;
+    d->time_pursuee_last_visible = gTime_stamp_for_this_munging;
+    d->state = ePCS_following_line_of_sight;
+    ProcessFollowPath(pOpponent_spec, ePOC_start, 1, 1, 0);
+}
+#endif
+
 // IDA: void __usercall ProcessPursueAndTwat(tOpponent_spec *pOpponent_spec@<EAX>, tProcess_objective_command pCommand@<EDX>)
 // FUNCTION: CARM95 0x00406a69
 void ProcessPursueAndTwat(tOpponent_spec* pOpponent_spec, tProcess_objective_command pCommand) {
@@ -1092,8 +1128,13 @@ void ProcessPursueAndTwat(tOpponent_spec* pOpponent_spec, tProcess_objective_com
 
         if (CAR_SPEC_IS_ROZZER(pOpponent_spec->car_spec) && pOpponent_spec->distance_from_home > 75.0f) {
             dr_dprintf("%s: Completing pursuit objective because I'm out of my precinct", pOpponent_spec->car_spec->driver_name);
-            NewObjective(pOpponent_spec, eOOT_return_to_start);
-            return;
+#if defined(DETHRACE_FIX_BUGS)
+            if (!Meld_IsArenaTrack())
+#endif
+            {
+                NewObjective(pOpponent_spec, eOOT_return_to_start);
+                return;
+            }
         }
 
         data->direct_line_section.length = MAX(pOpponent_spec->player_to_oppo_d, 3.0f);
@@ -1138,16 +1179,20 @@ void ProcessPursueAndTwat(tOpponent_spec* pOpponent_spec, tProcess_objective_com
                     } else {
                         if (data->pursuee->my_trail.number_of_nodes < 2) {
                             dr_dprintf("%s: Giving up pursuit - not visible & no trail yet", pOpponent_spec->car_spec->driver_name);
-                            NewObjective(pOpponent_spec, eOOT_get_near_player);
-                            return;
+#if defined(DETHRACE_FIX_BUGS)
+                            if (Meld_IsArenaTrack()) { ArenaForceDirectLineOfSight(pOpponent_spec); } else
+#endif
+                            { NewObjective(pOpponent_spec, eOOT_get_near_player); return; }
                         }
                         if (data->state != ePCS_following_trail) {
                             section_no = FindNearestTrailSection(pOpponent_spec, data->pursuee, &section_v, &intersect, &distance);
                             data->state = ePCS_following_trail;
                             if (distance > 20.0f || section_no == -1) {
                                 dr_dprintf("%s: Giving up pursuit - not visible & trail ain't close enough (%f)", pOpponent_spec->car_spec->driver_name, distance);
-                                NewObjective(pOpponent_spec, eOOT_get_near_player);
-                                return;
+#if defined(DETHRACE_FIX_BUGS)
+                                if (Meld_IsArenaTrack()) { ArenaForceDirectLineOfSight(pOpponent_spec); } else
+#endif
+                                { NewObjective(pOpponent_spec, eOOT_get_near_player); return; }
                             }
                             dr_dprintf("%s: Commencing ePCS_following_trail state", pOpponent_spec->car_spec->driver_name);
                             pOpponent_spec->follow_path_data.section_no = section_no;
@@ -1205,6 +1250,9 @@ void ProcessPursueAndTwat(tOpponent_spec* pOpponent_spec, tProcess_objective_com
                     dr_dprintf("%s: Trail got away; found new trail section %d", pOpponent_spec->car_spec->driver_name, section_no);
                     if (section_no == -1 || distance > 20.0f || !PointVisibleFromHere(&intersect, &pOpponent_spec->car_spec->car_master_actor->t.t.translate.t)) {
                         dr_dprintf("%s: ...which unfortunately is too far away (%fBRU) or not visible - end of pursuit", pOpponent_spec->car_spec->driver_name, distance);
+#if defined(DETHRACE_FIX_BUGS)
+                        if (Meld_IsArenaTrack()) { ArenaForceDirectLineOfSight(pOpponent_spec); break; }
+#endif
                         NewObjective(pOpponent_spec, eOOT_get_near_player);
                         break;
                     }
@@ -1216,10 +1264,16 @@ void ProcessPursueAndTwat(tOpponent_spec* pOpponent_spec, tProcess_objective_com
             sprintf(str, "%s: Trail section %d/%d", pOpponent_spec->car_spec->driver_name, pOpponent_spec->follow_path_data.section_no, data->pursuee->my_trail.number_of_nodes - 1);
             res = ProcessFollowPath(pOpponent_spec, ePOC_run, 1, 0, 0);
             if (res == eFPR_given_up) {
+#if defined(DETHRACE_FIX_BUGS)
+                if (Meld_IsArenaTrack()) { ArenaForceDirectLineOfSight(pOpponent_spec); break; }
+#endif
                 NewObjective(pOpponent_spec, eOOT_get_near_player);
                 return;
             }
             if (res == eFPR_end_of_path) {
+#if defined(DETHRACE_FIX_BUGS)
+                if (Meld_IsArenaTrack()) { ArenaForceDirectLineOfSight(pOpponent_spec); break; }
+#endif
                 NewObjective(pOpponent_spec, eOOT_get_near_player);
                 return;
             }
@@ -1255,6 +1309,12 @@ void ProcessRunAway(tOpponent_spec* pOpponent_spec, tProcess_objective_command p
         dr_dprintf("%s: ProcessRunAway() - new objective started", pOpponent_spec->car_spec->driver_name);
         pOpponent_spec->run_away_data.time_to_stop = gTime_stamp_for_this_munging + 1000 * IRandomBetween(30, 90);
         ClearOpponentsProjectedRoute(pOpponent_spec);
+#if defined(DETHRACE_FIX_BUGS)
+        if (gProgram_state.AI_vehicles.number_of_path_sections == 0) {
+            NewObjective(pOpponent_spec, eOOT_pursue_and_twat, &gProgram_state.current_car);
+            return;
+        }
+#endif
         section_no = FindNearestPathSection(&pOpponent_spec->car_spec->car_master_actor->t.t.translate.t, &direction_v, &intersect, &distance);
         if (BrVector3Dot(&pOpponent_spec->car_spec->direction, &direction_v) >= 0.0f) {
             AddToOpponentsProjectedRoute(pOpponent_spec, section_no, 1);
@@ -1659,6 +1719,12 @@ void ChooseNewObjective(tOpponent_spec* pOpponent_spec, int pMust_choose_one) {
     if (pOpponent_spec->current_objective == eOOT_knackered_and_freewheeling || pOpponent_spec->knackeredness_detected) {
         return;
     }
+#if defined(DETHRACE_FIX_BUGS)
+    if (Meld_IsArenaTrack() && pOpponent_spec->current_objective == eOOT_none && !gFirst_frame) {
+        ArenaForcePursuit(pOpponent_spec);
+        return;
+    }
+#endif
     if (gTime_stamp_for_this_munging > pOpponent_spec->next_out_of_world_check) {
         pOpponent_spec->next_out_of_world_check = gTime_stamp_for_this_munging + 500;
         if (HasCarFallenOffWorld(pOpponent_spec->car_spec)) {
@@ -1716,11 +1782,21 @@ void ChooseNewObjective(tOpponent_spec* pOpponent_spec, int pMust_choose_one) {
                 if (CAR_SPEC_IS_ROZZER(pOpponent_spec->car_spec)) {
                     if (PercentageChance(20)) {
                         dr_dprintf("%s: Decided to run away", pOpponent_spec->car_spec->driver_name);
+#if defined(DETHRACE_FIX_BUGS)
+                        if (gProgram_state.AI_vehicles.number_of_path_sections == 0) {
+                            NewObjective(pOpponent_spec, eOOT_pursue_and_twat, &gProgram_state.current_car);
+                        } else
+#endif
                         NewObjective(pOpponent_spec, eOOT_run_away);
                         return;
                     }
                 } else if (PercentageChance((pursuit_percentage + 60) - pOpponent_spec->nastiness * 50.0f)) {
                     dr_dprintf("%s: Decided to run away", pOpponent_spec->car_spec->driver_name);
+#if defined(DETHRACE_FIX_BUGS)
+                    if (gProgram_state.AI_vehicles.number_of_path_sections == 0) {
+                        NewObjective(pOpponent_spec, eOOT_pursue_and_twat, &gProgram_state.current_car);
+                    } else
+#endif
                     NewObjective(pOpponent_spec, eOOT_run_away);
                     return;
                 }
@@ -1785,6 +1861,9 @@ void ChooseNewObjective(tOpponent_spec* pOpponent_spec, int pMust_choose_one) {
         }
         if (pMust_choose_one) {
             dr_dprintf("%s: Choosing new objective because we have to...", pOpponent_spec->car_spec->driver_name, pOpponent_spec->car_spec->last_person_to_hit_us);
+#if defined(DETHRACE_FIX_BUGS)
+            if (Meld_IsArenaTrack()) { ArenaForcePursuit(pOpponent_spec); return; }
+#endif
             if (pOpponent_spec->has_moved_at_some_point) {
                 if (CAR_SPEC_IS_ROZZER(pOpponent_spec->car_spec)) {
                     NewObjective(pOpponent_spec, eOOT_return_to_start);

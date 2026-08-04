@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 extern br_uint_32 gI_am_cheating;
 extern int gSound_override;
@@ -337,6 +338,29 @@ int Harness_Init(int* argc, char* argv[]) {
         OS_InstallSignalHandler(argv[0]);
     }
 
+    // Capture exe dir as an absolute path BEFORE chdir() moves us.
+    if (harness_game_config.meld && argv[0] != NULL) {
+        char abs_path[MAX_PATH];
+        if (argv[0][0] == '/') {
+            safe_strcpy(abs_path, argv[0]);
+        } else {
+            char cwd[MAX_PATH];
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                snprintf(abs_path, sizeof(abs_path), "%s/%s", cwd, argv[0]);
+            } else {
+                abs_path[0] = '\0';
+            }
+        }
+        if (abs_path[0] != '\0') {
+            char* sep = strrchr(abs_path, '/');
+            if (sep != NULL) {
+                *sep = '\0';
+                safe_strcpy(harness_game_config.meld_overlay_dir, abs_path);
+                LOG_INFO2("Meld: overlay dir: %s", harness_game_config.meld_overlay_dir);
+            }
+        }
+    }
+
     Harness_DetectAndSetWorkingDirectory(argv[0]);
 
     if (harness_game_info.mode == eGame_none) {
@@ -581,6 +605,8 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
         harness_game_config.meld = (value[0] == '1');
     } else if (MATCH("Slop", "MeldBothStartingCars")) {
         harness_game_config.meld_both_starting_cars = (value[0] == '1');
+    } else if (MATCH("Slop", "MeldNetRaces")) {
+        harness_game_config.meld_net_races = (value[0] == '1');
     }
 
     else if (MATCH("Developers", "Diagnostics")) {
@@ -639,7 +665,7 @@ int Harness_ProcessIniFile(void) {
 
 // Filesystem hooks
 FILE* Harness_Hook_fopen(const char* pathname, const char* mode) {
-    if (gMeld_active) {
+    if (gMeld_active || gMeld_net_races_active) {
         return Meld_fopen(pathname, mode);
     }
     return OS_fopen(pathname, mode);
