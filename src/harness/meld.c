@@ -46,9 +46,12 @@ static FILE* meld_fmemopen(void* buf, size_t size, const char* mode) {
     return f;
 }
 #define fmemopen meld_fmemopen
+#include <direct.h>
+#define getcwd _getcwd
 #else
 #define MELD_SEP "/"
 #define MELD_SEP_CH '/'
+#include <unistd.h>
 #endif
 
 // ---------------------------------------------------------------------------
@@ -1279,6 +1282,43 @@ void Meld_ResolveMusicPath(int track, char* out, size_t len) {
 }
 
 // ---------------------------------------------------------------------------
+// Overlay dir
+// ---------------------------------------------------------------------------
+
+void Meld_CaptureExeDir(const char* argv0) {
+    char abs_path[MAX_PATH];
+    char* sep;
+    char* sep2;
+    int is_abs;
+
+    if (argv0 == NULL) {
+        return;
+    }
+    is_abs = (argv0[0] == '/') || (argv0[0] != '\0' && argv0[1] == ':');
+    if (is_abs) {
+        strncpy(abs_path, argv0, sizeof(abs_path) - 1);
+        abs_path[sizeof(abs_path) - 1] = '\0';
+    } else {
+        char cwd[MAX_PATH];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) {
+            return;
+        }
+        snprintf(abs_path, sizeof(abs_path), "%s/%s", cwd, argv0);
+    }
+    sep = strrchr(abs_path, '/');
+    sep2 = strrchr(abs_path, '\\');
+    if (sep2 > sep) {
+        sep = sep2;
+    }
+    if (sep != NULL) {
+        *sep = '\0';
+        strncpy(harness_game_config.meld_overlay_dir, abs_path,
+                sizeof(harness_game_config.meld_overlay_dir) - 1);
+        harness_game_config.meld_overlay_dir[sizeof(harness_game_config.meld_overlay_dir) - 1] = '\0';
+        LOG_INFO2("Meld: overlay dir: %s", harness_game_config.meld_overlay_dir);
+    }
+}
+
 // Save path
 // ---------------------------------------------------------------------------
 

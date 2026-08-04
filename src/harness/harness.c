@@ -15,12 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#define getcwd _getcwd
-#else
-#include <unistd.h>
-#endif
 
 extern br_uint_32 gI_am_cheating;
 extern int gSound_override;
@@ -343,34 +337,8 @@ int Harness_Init(int* argc, char* argv[]) {
         OS_InstallSignalHandler(argv[0]);
     }
 
-    // Capture exe dir as an absolute path BEFORE chdir() moves us.
-    if (harness_game_config.meld && argv[0] != NULL) {
-        char abs_path[MAX_PATH];
-        // Absolute: Unix '/' prefix or Windows 'C:' drive prefix.
-        int is_abs = (argv[0][0] == '/') || (argv[0][0] != '\0' && argv[0][1] == ':');
-        if (is_abs) {
-            safe_strcpy(abs_path, argv[0]);
-        } else {
-            char cwd[MAX_PATH];
-            if (getcwd(cwd, sizeof(cwd)) != NULL) {
-                snprintf(abs_path, sizeof(abs_path), "%s/%s", cwd, argv[0]);
-            } else {
-                abs_path[0] = '\0';
-            }
-        }
-        if (abs_path[0] != '\0') {
-            // Find last separator — handle both '/' and '\'.
-            char* sep = strrchr(abs_path, '/');
-            char* sep2 = strrchr(abs_path, '\\');
-            if (sep2 > sep) {
-                sep = sep2;
-            }
-            if (sep != NULL) {
-                *sep = '\0';
-                safe_strcpy(harness_game_config.meld_overlay_dir, abs_path);
-                LOG_INFO2("Meld: overlay dir: %s", harness_game_config.meld_overlay_dir);
-            }
-        }
+    if (harness_game_config.meld) {
+        Meld_CaptureExeDir(argv[0]);
     }
 
     Harness_DetectAndSetWorkingDirectory(argv[0]);

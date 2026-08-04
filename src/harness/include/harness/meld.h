@@ -51,6 +51,10 @@ FILE* Meld_fopen(const char* path, const char* mode);
 int Meld_MusicAvailable(void);
 void Meld_ResolveMusicPath(int track, char* out, size_t len);
 
+// Capture the directory containing the executable into meld_overlay_dir.
+// Must be called before any chdir() changes the working directory.
+void Meld_CaptureExeDir(const char* argv0);
+
 // Save-file path (writes the meld-specific "SAVEGAME_M" directory path).
 void Meld_SavePath(int slot, char* out, size_t len);
 
