@@ -2243,6 +2243,10 @@ void Meld_NetRaces_Init(void) {
                     if (dot) {
                         *dot = '\0';
                     }
+                    /* Cap stem so "ANIM/<stem>.FLI" fits in MELD_LINE_LEN. */
+                    if (strlen(track_stem) > MELD_LINE_LEN - 11) {
+                        track_stem[MELD_LINE_LEN - 11] = '\0';
+                    }
                     snprintf(anim_rel, sizeof(anim_rel), "ANIM" MELD_SEP "%s.FLI", track_stem);
                     scene_fli[0] = '\0';
                     for (gd = 0; gd < harness_game_config.game_dirs_count && gd < MELD_MAX_GAMES; gd++) {
@@ -2269,7 +2273,7 @@ void Meld_NetRaces_Init(void) {
                 mbuf_append_m1(&buf, "5,3");
                 mbuf_append_m1(&buf, "0,99");
                 mbuf_append_m1(&buf, "1");
-                mbuf_append_m1(&buf, "(???)");
+                mbuf_append_m1(&buf, "(\?\?\?)");
             } else {
                 for (l = 0; l < result[i]->num_lines; l++) {
                     mbuf_append_m1(&buf, result[i]->lines[l]);
