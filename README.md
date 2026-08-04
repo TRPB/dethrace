@@ -2,9 +2,9 @@
 
 Modded [Dethrace](https://github.com/dethrace-labs/dethrace) with several tweaks to make the game more to my liking.
 
-No pull requests to upstream because this is heavily AI assisted. The communtiy are (rightly) dubious of AI pull requests and I am not at a level in C that I am comfortable pushing them upstream. 
+No pull requests to upstream because this is heavily AI assisted. The communtiy are (rightly) dubious of AI pull requests and I am not at a level in C that I am comfortable pushing them upstream and pushing the maintenance burden on other people. 
 
-So consdider this more of a mod that is just for fun: A wishlist for what I want in the real project with a dirty AI implementation rather than anything that will likely make it into the project itself. If upsteam developers find anything useful, they are of course welcome to merge it. That said, for just playing the game, it improves my experience massively.
+So consider this more of a mod that is just for fun: A wishlist for what I want in the real project with a dirty AI implementation rather than anything that will likely make it into the project itself. If upsteam developers find anything useful, they are of course welcome to merge it. That said, for just playing the game, it improves my experience massively.
 
 ![Screenshot 1](docs/screenshot1.png)
 ![Screenshot 2](docs/screenshot2.png)
@@ -22,6 +22,7 @@ So consdider this more of a mod that is just for fun: A wishlist for what I want
 
 ## Features - Gameplay
 - Dynamic meld - Content from every game listed in `[Games]` will be melded at the engine level without needing a mod that changes game files. Cars, tracks, etc all get melded so you can have a single campaign with all the content. Tested with Carmageddon, Splat Pack and Xmas Demo.
+- When melding, can optionally add the two multiplayer arena tracks into the campaign, you'll get SUMO and COLISEUM as campaign tracks. There is no starting grid since you and opponents use the multiplayer starting positions. No peds, no checkpoints, just last man standing.
 - Allow configuration of stealworthyness (all cars can be stolen, steal percentage probability, and disabling of rank gate)
 
 ## Bug fixes
@@ -29,7 +30,6 @@ So consdider this more of a mod that is just for fun: A wishlist for what I want
 - 3dfx mode fog causing odd game tint (Dethrace bug)
 - Fix z-fighting when draw distance is massively increased (SDL config issue in Dethrace)
 - Submersion physics properly applied, can't drive without water physics while under water (Dethrace bug)
-- Fix over-zealous horizon culling in 3dfx mode that makes the skybox sometimes flicker
 - Fix bug where oppponent zone transition sounds e.g. water splash play as if they are coming from the player car (Possibly 1997 game bug?)
 - Some textures zoomed in OpenGL mode (Dethrace bug)
 - ProcessGetNearPlayer crash fix 
@@ -59,6 +59,11 @@ Meld = 1
 ; Max gets both Eagles, Die Anna gets both Hawks
 ; When zero you only get the car from the first game listed in [Games]
 MeldBothStartingCars = 1
+; Meld multiplayer tracks that don't appear as normal races in the campaign
+; Unless you have multiplayer focussed mods you'll see both SUMO and COLISEUM 
+; as arena races during the single player campaign
+MeldNetRaces = 1
+
 
 ; Custom resolution, aspect ratio is based on this, for 4:3 choose a 4:3 resolution (suggest window mode if you do this since your monitor probably won't support it natively)
 Width = 3840
