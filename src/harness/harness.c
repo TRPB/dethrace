@@ -15,7 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define getcwd _getcwd
+#else
 #include <unistd.h>
+#endif
 
 extern br_uint_32 gI_am_cheating;
 extern int gSound_override;
@@ -341,7 +346,9 @@ int Harness_Init(int* argc, char* argv[]) {
     // Capture exe dir as an absolute path BEFORE chdir() moves us.
     if (harness_game_config.meld && argv[0] != NULL) {
         char abs_path[MAX_PATH];
-        if (argv[0][0] == '/') {
+        // Absolute: Unix '/' prefix or Windows 'C:' drive prefix.
+        int is_abs = (argv[0][0] == '/') || (argv[0][0] != '\0' && argv[0][1] == ':');
+        if (is_abs) {
             safe_strcpy(abs_path, argv[0]);
         } else {
             char cwd[MAX_PATH];
@@ -352,7 +359,12 @@ int Harness_Init(int* argc, char* argv[]) {
             }
         }
         if (abs_path[0] != '\0') {
+            // Find last separator — handle both '/' and '\'.
             char* sep = strrchr(abs_path, '/');
+            char* sep2 = strrchr(abs_path, '\\');
+            if (sep2 > sep) {
+                sep = sep2;
+            }
             if (sep != NULL) {
                 *sep = '\0';
                 safe_strcpy(harness_game_config.meld_overlay_dir, abs_path);
