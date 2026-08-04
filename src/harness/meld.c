@@ -1286,7 +1286,8 @@ void Meld_ResolveMusicPath(int track, char* out, size_t len) {
 // ---------------------------------------------------------------------------
 
 void Meld_CaptureExeDir(const char* argv0) {
-    char abs_path[MAX_PATH];
+    /* MAX_PATH*2: cwd (MAX_PATH-1) + '/' + argv0 (MAX_PATH-1) + null */
+    char abs_path[MAX_PATH * 2];
     char* sep;
     char* sep2;
     int is_abs;
@@ -1303,7 +1304,8 @@ void Meld_CaptureExeDir(const char* argv0) {
         if (getcwd(cwd, sizeof(cwd)) == NULL) {
             return;
         }
-        snprintf(abs_path, sizeof(abs_path), "%s/%s", cwd, argv0);
+        /* Precision on argv0 bounds the output so the compiler can verify fit. */
+        snprintf(abs_path, sizeof(abs_path), "%s/%.*s", cwd, MAX_PATH - 1, argv0);
     }
     sep = strrchr(abs_path, '/');
     sep2 = strrchr(abs_path, '\\');
