@@ -175,6 +175,12 @@ if(DETHRACE_INSTALL)
         DESTINATION "${CMAKE_INSTALL_DOCDIR}"
     )
 
+    if(EXISTS "${CMAKE_SOURCE_DIR}/DATA")
+        install(DIRECTORY "${CMAKE_SOURCE_DIR}/DATA"
+            DESTINATION "."
+        )
+    endif()
+
     set(DETHRACE_PACKAGE_PLATFORM "" CACHE STRING "Dethrace binary package platform")
     set(DETHRACE_PACKAGE_ARCH "" CACHE STRING "Dethrace binary package architecture")
 
