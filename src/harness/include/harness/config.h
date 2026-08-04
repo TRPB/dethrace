@@ -86,7 +86,8 @@ typedef struct tHarness_game_config {
     int meld_both_starting_cars;
     int meld_net_races;
     // Absolute path to the directory containing the game executable.
-    // Files under <meld_overlay_dir>/DATA/ override all game dirs.
+    // Meld_Init() prepends this as game_dirs[0] so DATA/ beside the exe
+    // acts as a highest-priority mod dir for both assets and campaign files.
     char meld_overlay_dir[MAX_PATH];
 } tHarness_game_config;
 

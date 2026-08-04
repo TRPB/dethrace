@@ -117,6 +117,9 @@ static int s_opponent_char_id[MELD_MAX_OPPONENTS];
 
 // Currently active game for VFS routing.
 static int s_active_game = 0;
+// Index of the overlay (exe-dir) slot in game_dirs[], or -1 if not present.
+// The overlay is always tried first in Meld_fopen regardless of s_active_game.
+static int s_overlay_game_idx = -1;
 
 // Music pool (absolute paths).
 static char s_music_paths[MELD_MAX_MUSIC][MAX_PATH];
@@ -1340,12 +1343,35 @@ void Meld_Init(void) {
         return;
     }
 
+    // Prepend the exe-dir as an overlay game dir (index 0) so mod assets and
+    // campaign files placed next to the exe take precedence over all [Games]
+    // entries. The real game dirs shift up by one.
+    s_overlay_game_idx = -1;
+    if (harness_game_config.meld_overlay_dir[0] != '\0'
+            && harness_game_config.game_dirs_count < 10) {
+        int i;
+        for (i = harness_game_config.game_dirs_count; i > 0; i--) {
+            harness_game_config.game_dirs[i] = harness_game_config.game_dirs[i - 1];
+        }
+        harness_game_config.game_dirs[0].name[0] = '\0';
+        strncpy(harness_game_config.game_dirs[0].directory,
+            harness_game_config.meld_overlay_dir,
+            sizeof(harness_game_config.game_dirs[0].directory) - 1);
+        harness_game_config.game_dirs[0].directory[sizeof(harness_game_config.game_dirs[0].directory) - 1] = '\0';
+        harness_game_config.game_dirs_count++;
+        s_overlay_game_idx = 0;
+    }
+
     LOG_INFO2("Meld_Init: starting with %d game dirs", harness_game_config.game_dirs_count);
 
     gMeld_both_starting_cars = harness_game_config.meld_both_starting_cars;
 
     for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
         s_game_method[g] = meld_detect_method(g);
+        // Overlay dir has no GENERAL.TXT; treat its files as plain text.
+        if (g == s_overlay_game_idx && s_game_method[g] == 0) {
+            s_game_method[g] = 2;
+        }
         s_game_contributed[g] = 0;
         LOG_INFO3("Meld_Init: game[%d] dir=%s", g, harness_game_config.game_dirs[g].directory);
         LOG_INFO3("Meld_Init: game[%d] method=%d", g, s_game_method[g]);
@@ -1364,7 +1390,7 @@ void Meld_Init(void) {
 
     meld_build_conflict_map();
 
-    s_active_game = 0;
+    s_active_game = (s_overlay_game_idx >= 0) ? 1 : 0;
     gMeld_active = 1;
 
     // Reset so LoadGeneralParameters re-detects the correct method from the
@@ -1770,20 +1796,6 @@ FILE* Meld_fopen(const char* path, const char* mode) {
         }
     }
 
-    // 1a. Overlay dir: <exe>/DATA takes precedence over all game dirs.
-    if (!writing && harness_game_config.meld_overlay_dir[0] != '\0') {
-        char tail[MAX_PATH];
-        char candidate[MAX_PATH];
-        meld_relative_tail(path, tail, sizeof(tail));
-        meld_join(candidate, sizeof(candidate), harness_game_config.meld_overlay_dir, tail);
-        {
-            FILE* f = OS_fopen(candidate, mode);
-            if (f != NULL) {
-                return f;
-            }
-        }
-    }
-
     // 1. Try the path as-is. Skip for known conflict assets opened for reading:
     //    gApplication_path points to the primary game, so "as-is" would always
     //    resolve to the primary game's copy. Step 2 uses s_active_game first.
@@ -1810,11 +1822,17 @@ FILE* Meld_fopen(const char* path, const char* mode) {
 
         meld_relative_tail(path, tail, sizeof(tail));
 
-        if (s_active_game >= 0 && s_active_game < harness_game_config.game_dirs_count) {
+        // Overlay (exe-dir) always first regardless of active game.
+        if (s_overlay_game_idx >= 0) {
+            order[n++] = s_overlay_game_idx;
+        }
+        // Active game next.
+        if (s_active_game >= 0 && s_active_game < harness_game_config.game_dirs_count
+                && s_active_game != s_overlay_game_idx) {
             order[n++] = s_active_game;
         }
         for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-            if (g == s_active_game) {
+            if (g == s_active_game || g == s_overlay_game_idx) {
                 continue;
             }
             order[n++] = g;

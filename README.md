@@ -24,6 +24,7 @@ So consider this more of a mod that is just for fun: A wishlist for what I want 
 - Dynamic meld - Content from every game listed in `[Games]` will be melded at the engine level without needing a mod that changes game files. Cars, tracks, etc all get melded so you can have a single campaign with all the content. Tested with Carmageddon, Splat Pack and Xmas Demo.
 - When melding, can optionally add the two multiplayer arena tracks into the campaign, you'll get SUMO and COLISEUM as campaign tracks. There is no starting grid since you and opponents use the multiplayer starting positions. No peds, no checkpoints, just last man standing.
 - Allow configuration of stealworthyness (all cars can be stolen, steal percentage probability, and disabling of rank gate)
+- Easier modding, see [Modding](#modding) below
 
 ## Bug fixes
 - Camera judder fix when car is driving up ramp (rendering only, no physics change, works best with PhysicsPerFrame=1, bug has been present since original 1997 game)
@@ -95,6 +96,27 @@ StealworthyRankLimitDisable = 1
 NumSkids = 65535
 ```
 
+## Modding
+
+Currently this only works with `Meld=1` but it allows you to quickly add mods in two ways:
+
+1. `./DATA` directory. Place a `DATA` directory beside the executable and any file in there takes precedence over files from the `[Games]` list. You can add new cars, tracks, etc. and they will be picked up automatically, including `DATA/DATA/RACES.TXT` and `DATA/DATA/OPPONENT.TXT` if you want to register new content with the campaign.
+
+2. Mod-Melding. The existing `Meld=1` option supports as many games as you have listed, these don't have to be complete games, they can just contain a single car, track, etc. 
+
+You can add mods as their own entries to load them. This gives a much nicer separation of stock/custom content and makes uninstalling mods a lot easier:
+
+```
+[Games]
+c1=/path/to/CARMA
+splat=/path/to/CARSPLAT
+xmasdemo=/path/to/XMASDEMO
+mod1=/path/to/my-new-car
+mod2=/path/to/my-new-track
+```
+
+Note: Mod folders must follow the same structure and contain their own DATA dir 
+
 ## Bug reporting
 
 Do not report bugs related to these changes upstream on Deathrace, if you're unsure, try to replicate the issue on the actual deathrace release, if it still happens, report there, if not, report here. 
@@ -102,4 +124,9 @@ Do not report bugs related to these changes upstream on Deathrace, if you're uns
 ## Credits
 
 This builds on the incredible [Dethrace](https://github.com/dethrace-labs/dethrace) project 
+
+The DATA dir ships the following:
+- Track images for the menu screen for the Sumo and Coliseum tracks by @TRPB
+
+
 
