@@ -28,11 +28,6 @@ extern int gMeld_primary_race_count;
 // routing. Called from init.c before LoadOpponents(). Sets gMeld_active.
 void Meld_Init(void);
 
-// Return a rewound FILE* for the pre-built merged campaign files.
-FILE* Meld_OpenRaceFile(void);
-FILE* Meld_OpenOpponentFile(void);
-FILE* Meld_OpenPartshopFile(void);
-
 // Set the active game (for VFS routing) based on a campaign race index.
 void Meld_SetActiveGame(int race_index);
 // Set the active game based on an opponent index (into gOpponents).
@@ -51,21 +46,10 @@ FILE* Meld_fopen(const char* path, const char* mode);
 int Meld_MusicAvailable(void);
 void Meld_ResolveMusicPath(int track, char* out, size_t len);
 
-// Capture the directory containing the executable into meld_overlay_dir.
-// Must be called before any chdir() changes the working directory.
-void Meld_CaptureExeDir(const char* argv0);
+// Capture the current working directory into meld_overlay_dir as the overlay
+// game dir (highest-priority asset source). Must be called before any chdir().
+void Meld_SetOverlayDir(void);
 
-// Index the GOG image (if any) in dir for single-game (Meld=0) cutscene
-// serving. Call once after the working directory has been set. Pass NULL or
-// empty string to fall back to the current working directory.
-void Meld_GogInit_Single(const char* dir);
-
-// Serve a cutscene SMK file from the single-game GOG index (Meld=0 path).
-// Returns a FILE* on success, NULL if not found or path is not an SMK.
-FILE* Meld_GogFopen(const char* path, const char* mode);
-
-// Save-file path (writes the meld-specific "SAVEGAME_M" directory path).
-void Meld_SavePath(int slot, char* out, size_t len);
 
 // Add extra starting-car indices to cars_available for the current character.
 // Call immediately after setting cars_available[0] = frank_or_anniness in InitGame.
@@ -75,15 +59,12 @@ void Meld_AddBothStartingCars(int frank, int* cars_avail, int* num_cars);
 // SP campaign. Rebuilds s_races_buf and sets gMeld_net_races_active. Call after
 // Meld_Init() when MeldNetRaces=1.
 void Meld_NetRaces_Init(void);
-// Counts used by LoadRaces() to assign correct rank data to the injected entries.
-int Meld_NetRaces_GetSPCount(void);
-int Meld_NetRaces_GetNetCount(void);
 // Returns 1 when the current race is a net-only arena track (no path sections,
 // net_starts used for placement).
 int Meld_IsArenaTrack(void);
 // Returns the map pixelmap basename for the current arena track (e.g.
 // "NSUMOMAP.PIX"), or NULL if not an arena track or name not found.
-const char* Meld_ArenaMapPixName(void);
+char* Meld_ArenaMapPixName(void);
 // Returns 1 if the current arena track has a custom scene FLI thumbnail.
 int Meld_ArenaHasSceneFli(void);
 // Blit the arena track overhead map pixelmap centred into the panel area of

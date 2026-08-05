@@ -2,6 +2,7 @@
 #include "../DETHRACE/constants.h"
 #include "ascii_tables.h"
 #include "include/harness/config.h"
+#include "include/harness/gog.h"
 #include "include/harness/hooks.h"
 #include "include/harness/meld.h"
 #include "include/harness/os.h"
@@ -338,13 +339,13 @@ int Harness_Init(int* argc, char* argv[]) {
     }
 
     if (harness_game_config.meld) {
-        Meld_CaptureExeDir(argv[0]);
+        Meld_SetOverlayDir();
     }
 
     Harness_DetectAndSetWorkingDirectory(argv[0]);
 
     if (!harness_game_config.meld) {
-        Meld_GogInit_Single(harness_game_config.selected_dir);
+        Gog_InitSingle(harness_game_config.selected_dir);
     }
 
     if (harness_game_info.mode == eGame_none) {
@@ -655,7 +656,7 @@ FILE* Harness_Hook_fopen(const char* pathname, const char* mode) {
     }
     f = OS_fopen(pathname, mode);
     if (f == NULL) {
-        f = Meld_GogFopen(pathname, mode);
+        f = Gog_FopenSingle(pathname, mode);
     }
     return f;
 }

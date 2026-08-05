@@ -215,6 +215,36 @@ void test_meld_plaintext_lines_unchanged(void) {
     rmdir(dir_path);
 }
 
+// Conflict lookup must be case-insensitive: a TXT referencing "wheel.pix"
+// should match a conflict registered as "WHEEL.PIX".
+void test_meld_conflict_case_insensitive(void) {
+    char file_path[256], dir_path[256];
+    FILE* src = make_named_temp("MYCAR.TXT", file_path, dir_path);
+    TEST_ASSERT_NOT_NULL(src);
+
+    write_m1_line(src, "MYCAR.TXT");
+    write_m1_line(src, "wheel.pix\t1\t0"); // lowercase reference
+    fclose(src);
+
+    Meld_Test_ClearConflicts();
+    Meld_Test_AddConflict("WHEEL.PIX"); // uppercase registration
+
+    FILE* result = Meld_Test_PatchTxt(file_path, 1);
+    TEST_ASSERT_NOT_NULL(result);
+
+    char line[256];
+    read_m1_line(result, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("MYCAR.TXT", line);
+
+    // The conflict line must be prefixed with the game index.
+    read_m1_line(result, line, sizeof(line));
+    TEST_ASSERT_EQUAL_STRING("1:wheel.pix\t1\t0", line);
+
+    fclose(result);
+    unlink(file_path);
+    rmdir(dir_path);
+}
+
 void test_meld_suite(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_meld_identity_line_preserved);
@@ -222,4 +252,5 @@ void test_meld_suite(void) {
     RUN_TEST(test_meld_getastring_identity);
     RUN_TEST(test_meld_non_conflict_unchanged);
     RUN_TEST(test_meld_plaintext_lines_unchanged);
+    RUN_TEST(test_meld_conflict_case_insensitive);
 }

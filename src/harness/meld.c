@@ -2,14 +2,13 @@
 // at runtime. Tracks, opponents, and assets are combined without manual file
 // copying. See harness/meld.h for the public API.
 
+#include "meld_internal.h"
 #include "harness/meld.h"
 #include "harness/config.h"
-#include "harness/iso.h"
+#include "harness/gog.h"
 #include "harness/os.h"
 #include "harness/trace.h"
 
-extern void EncodeLine(char* pS);
-extern int gEncryption_method;
 extern char* GetALineWithNoPossibleService(FILE* pF, unsigned char* pS);
 
 #include <ctype.h>
@@ -25,34 +24,48 @@ typedef unsigned long uint64_t;
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #ifdef _WIN32
-#define MELD_SEP "\\"
-#define MELD_SEP_CH '\\'
-
+#include <direct.h>
+#define getcwd _getcwd
+// fmemopen shim: FILE_ATTRIBUTE_TEMPORARY keeps data in cache (avoids disk
+// writes for small files); FILE_FLAG_DELETE_ON_CLOSE auto-deletes on fclose.
 static FILE* meld_fmemopen(void* buf, size_t size, const char* mode) {
-    char* name = _tempnam(NULL, "mld");
+    char dir[MAX_PATH];
+    char path[MAX_PATH];
+    HANDLE h;
+    int fd;
     FILE* f;
     (void)mode;
-    if (name == NULL) {
+    if (GetTempPathA(sizeof(dir), dir) == 0) {
         return NULL;
     }
-    f = fopen(name, "w+b");
-    free(name);
+    if (GetTempFileNameA(dir, "mld", 0, path) == 0) {
+        return NULL;
+    }
+    h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        return NULL;
+    }
+    fd = _open_osfhandle((intptr_t)h, _O_RDWR | _O_BINARY);
+    if (fd == -1) {
+        CloseHandle(h);
+        return NULL;
+    }
+    f = _fdopen(fd, "w+b");
     if (f == NULL) {
+        _close(fd);
         return NULL;
     }
     fwrite(buf, 1, size, f);
     rewind(f);
     return f;
 }
+// Redirect bare fmemopen calls (Meld_Open*File) through the shim.
 #define fmemopen meld_fmemopen
-#include <direct.h>
-#define getcwd _getcwd
 #else
-#define MELD_SEP "/"
-#define MELD_SEP_CH '/'
 #include <unistd.h>
 #endif
 
@@ -67,9 +80,6 @@ int gMeld_primary_race_count = 0;
 int gMeld_net_races_active = 0;
 int gMeld_use_net_starts = 0;
 
-#define MELD_MAX_GAMES 10
-#define MELD_MAX_RACES 200
-#define MELD_MAX_RACE_LINES 80
 // Deduped opponent pool size. Melding several installs — plus each racer's
 // per-livery entries (Max Damage alone has ~6 eagle colours per game) — pushes
 // the pool well past a single game's roster, so this must be generous: any
@@ -79,33 +89,31 @@ int gMeld_use_net_starts = 0;
 // Raw opponents read across all games before dedup (>= the deduped pool).
 #define MELD_MAX_RAW_OPPONENTS 600
 #define MELD_MAX_OPPO_LINES 40
-#define MELD_LINE_LEN 512
 #define MELD_MAX_MUSIC 64
 
 // Per-game decode method (1 = supported XOR, 2 = demo-only, skipped).
-static int s_game_method[MELD_MAX_GAMES];
+int s_game_method[MELD_MAX_GAMES];
 // Whether each game contributed at least one unique race (for PARTSHOP).
 static int s_game_contributed[MELD_MAX_GAMES];
 
 // Pre-built merged file contents (plain text).
-static char* s_races_buf = NULL;
-static size_t s_races_len = 0;
+char* s_races_buf = NULL;
+size_t s_races_len = 0;
 static char* s_oppo_buf = NULL;
 static size_t s_oppo_len = 0;
 static char* s_partshop_buf = NULL;
 static size_t s_partshop_len = 0;
 
 // Race slot -> source game index.
-static int s_race_source_game[MELD_MAX_RACES];
+int s_race_source_game[MELD_MAX_RACES];
 // Race slot -> 1 if this is a net-only arena track (no SP path sections).
-static int s_race_is_arena[MELD_MAX_RACES];
+int s_race_is_arena[MELD_MAX_RACES];
 // Race slot -> map pixelmap basename (for arena tracks), empty string otherwise.
-#define MELD_MAP_PIX_LEN 16
-static char s_race_map_pix[MELD_MAX_RACES][MELD_MAP_PIX_LEN];
+char s_race_map_pix[MELD_MAX_RACES][MELD_MAP_PIX_LEN];
 // Race slot -> 1 if a custom scene FLI (DATA/ANIM/{track}.FLI) was found for this arena race.
-static int s_race_has_scene_fli[MELD_MAX_RACES];
+int s_race_has_scene_fli[MELD_MAX_RACES];
 // Current race index (updated by Meld_SetActiveGame).
-static int s_current_race_index = -1;
+int s_current_race_index = -1;
 // Opponent slot -> source game index.
 static int s_opponent_source_game[MELD_MAX_OPPONENTS];
 // Opponent slot -> car_file name (first token of car file line).
@@ -123,33 +131,13 @@ static int s_active_game = 0;
 // The overlay is always tried first in Meld_fopen regardless of s_active_game.
 static int s_overlay_game_idx = -1;
 
-// GOG ISO images: one slot per meld game dir, plus slot MELD_MAX_GAMES for
-// single-game (Meld=0) mode. NULL img means no GOG found for that slot.
-#define GOG_MAX_SMKS   32
-#define GOG_SINGLE_IDX MELD_MAX_GAMES
-
-typedef struct {
-    tIso_image* img;
-    tIso_entry  smks[GOG_MAX_SMKS];
-    int         smk_count;
-} tGog_slot;
-
-static tGog_slot s_gog[MELD_MAX_GAMES + 1];
-
 // Music pool (absolute paths).
 static char s_music_paths[MELD_MAX_MUSIC][MAX_PATH];
+static uint64_t s_music_hashes[MELD_MAX_MUSIC];
 static int s_music_count = 0;
 static int s_music_index = 0;
 
-// Randomly selected intro provider. s_intro_game_idx >= 0 means a game was
-// chosen. s_intro_disk_path non-empty means serve from that disk path;
-// empty means serve from that game's GOG.
-static int  s_intro_game_idx = -1;
-static char s_intro_disk_path[MAX_PATH];
-
-// Forward declarations for helpers defined later.
-static void meld_join(char* dest, size_t len, const char* a, const char* b);
-static const char* meld_basename(const char* path);
+// Forward declaration for helper defined after first use site.
 
 // ---------------------------------------------------------------------------
 // Asset conflict map (Phase 3): basenames that differ across game dirs
@@ -187,15 +175,18 @@ static int meld_readline_m(FILE* f, int method, char* buf) {
 // Hashing (FNV-1a of file contents; not cryptographic)
 // ---------------------------------------------------------------------------
 
-static uint64_t meld_fnv1a(const void* data, size_t len) {
+static uint64_t meld_fnv1a_feed(uint64_t h, const void* data, size_t len) {
     const unsigned char* p = (const unsigned char*)data;
-    uint64_t h = MELD_FNV_OFFSET;
     size_t i;
     for (i = 0; i < len; i++) {
         h ^= p[i];
         h *= MELD_FNV_PRIME;
     }
     return h;
+}
+
+static uint64_t meld_fnv1a(const void* data, size_t len) {
+    return meld_fnv1a_feed(MELD_FNV_OFFSET, data, len);
 }
 
 // Hash a file's full contents. Returns 0 if the file could not be opened.
@@ -208,11 +199,7 @@ static uint64_t meld_hash_file(const char* path) {
         return 0;
     }
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-        size_t i;
-        for (i = 0; i < n; i++) {
-            h ^= buf[i];
-            h *= MELD_FNV_PRIME;
-        }
+        h = meld_fnv1a_feed(h, buf, n);
     }
     fclose(f);
     return h;
@@ -222,19 +209,22 @@ static uint64_t meld_hash_file(const char* path) {
 // Conflict map helpers
 // ---------------------------------------------------------------------------
 
+static int meld_conflict_cmp(const void* a, const void* b) {
+    return strcasecmp((const char*)a, (const char*)b);
+}
+
 static int meld_is_conflict(const char* basename) {
-    int i;
-    for (i = 0; i < s_conflict_count; i++) {
-        if (strcasecmp(s_conflict_basenames[i], basename) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return bsearch(basename, s_conflict_basenames, s_conflict_count,
+                   MELD_CONFLICT_NAMELEN, meld_conflict_cmp) != NULL;
 }
 
 static void meld_add_conflict(const char* basename) {
-    if (meld_is_conflict(basename)) {
-        return;
+    int i;
+    // Linear scan: array is unsorted during build; sorted once after.
+    for (i = 0; i < s_conflict_count; i++) {
+        if (strcasecmp(s_conflict_basenames[i], basename) == 0) {
+            return;
+        }
     }
     if (s_conflict_count < MELD_MAX_CONFLICTS) {
         strncpy(s_conflict_basenames[s_conflict_count], basename, MELD_CONFLICT_NAMELEN - 1);
@@ -332,7 +322,6 @@ static void meld_scan_subdir_conflicts(const char* subdir) {
         return;
     }
 
-    LOG_INFO2("Meld conflict scan: %s", subdir);
 
     for (g = 0; g < gc && g < MELD_MAX_GAMES; g++) {
         meld_join(dir_a, sizeof(dir_a), harness_game_config.game_dirs[g].directory, subdir);
@@ -366,20 +355,19 @@ static void meld_build_conflict_map(void) {
     };
     int i;
 
-    LOG_INFO("Meld: building asset conflict map");
 
     for (i = 0; asset_subdirs[i] != NULL; i++) {
         meld_scan_subdir_conflicts(asset_subdirs[i]);
     }
 
-    LOG_INFO2("Meld: conflict map done, %d conflicting asset basenames", s_conflict_count);
+    qsort(s_conflict_basenames, s_conflict_count, MELD_CONFLICT_NAMELEN, meld_conflict_cmp);
 }
 
 // ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
 
-static void meld_join(char* dest, size_t len, const char* a, const char* b) {
+void meld_join(char* dest, size_t len, const char* a, const char* b) {
     size_t a_len = strlen(a);
     if (a_len + 1 >= len) {
         strncpy(dest, a, len - 1);
@@ -393,7 +381,7 @@ static void meld_join(char* dest, size_t len, const char* a, const char* b) {
 }
 
 // Open DATA/<name> under a specific game directory.
-static FILE* meld_open_data(int game_idx, const char* name, const char* mode) {
+FILE* meld_open_data(int game_idx, const char* name, const char* mode) {
     char path[MAX_PATH];
     char data[MAX_PATH];
     meld_join(data, sizeof(data), harness_game_config.game_dirs[game_idx].directory, "DATA");
@@ -402,7 +390,7 @@ static FILE* meld_open_data(int game_idx, const char* name, const char* mode) {
 }
 
 // Detect the encode method for a game by inspecting DATA/GENERAL.TXT.
-static int meld_detect_method(int game_idx) {
+int meld_detect_method(int game_idx) {
     FILE* f = meld_open_data(game_idx, "GENERAL.TXT", "rb");
     char buf[MELD_LINE_LEN];
     if (f == NULL) {
@@ -417,8 +405,12 @@ static int meld_detect_method(int game_idx) {
         return 2;
     }
     memmove(buf, buf + 1, strlen(buf));
-    gEncryption_method = 1;
-    EncodeLine(buf);
+    {
+        int saved = gEncryption_method;
+        gEncryption_method = 1;
+        EncodeLine(buf);
+        gEncryption_method = saved;
+    }
     buf[6] = '\0';
     if (strcmp(buf, "0.01\t\t") == 0) {
         return 1;
@@ -430,13 +422,7 @@ static int meld_detect_method(int game_idx) {
 // Dynamic text buffer
 // ---------------------------------------------------------------------------
 
-typedef struct {
-    char* data;
-    size_t len;
-    size_t cap;
-} tMeld_buf;
-
-static void mbuf_init(tMeld_buf* b) {
+void mbuf_init(tMeld_buf* b) {
     b->cap = 4096;
     b->len = 0;
     b->data = (char*)malloc(b->cap);
@@ -445,7 +431,7 @@ static void mbuf_init(tMeld_buf* b) {
     }
 }
 
-static void mbuf_append(tMeld_buf* b, const char* s) {
+void mbuf_append(tMeld_buf* b, const char* s) {
     size_t sl = strlen(s);
     if (b->data == NULL) {
         return;
@@ -468,7 +454,7 @@ static void mbuf_append(tMeld_buf* b, const char* s) {
 }
 
 // Encode a plain-text line with method-1 and append "@<encoded>\n" to buf.
-static void mbuf_append_m1(tMeld_buf* b, const char* line) {
+void mbuf_append_m1(tMeld_buf* b, const char* line) {
     char encoded[MELD_LINE_LEN];
     strncpy(encoded, line, sizeof(encoded) - 1);
     encoded[sizeof(encoded) - 1] = 0;
@@ -483,21 +469,12 @@ static void mbuf_append_m1(tMeld_buf* b, const char* line) {
 // RACES.TXT merge
 // ---------------------------------------------------------------------------
 
-typedef struct {
-    char lines[MELD_MAX_RACE_LINES][MELD_LINE_LEN];
-    int num_lines;
-    int game_idx;
-    int order; // stable sort tie-break
-    float norm;
-} tMeld_race;
-
-static tMeld_race s_races[MELD_MAX_RACES];
-static int s_race_count = 0;
-static int s_net_map_base_count = 0;
+tMeld_race s_races[MELD_MAX_RACES];
+int s_race_count = 0;
 
 // Read one full race record (starting at its name line) into r. Returns:
 //   1 = read a race, 0 = hit "END", -1 = EOF/error.
-static int meld_read_one_race(FILE* f, int method, tMeld_race* r) {
+int meld_read_one_race(FILE* f, int method, tMeld_race* r) {
     char s[MELD_LINE_LEN];
     int chunk_count;
     int j;
@@ -926,7 +903,7 @@ static void meld_build_opponents(void) {
     // (car_number < 0) and cops (500/501) dedup by car_hash only.
     // Mark included entries.
     {
-        static int included[MELD_MAX_RAW_OPPONENTS];
+        int included[MELD_MAX_RAW_OPPONENTS];
         for (i = 0; i < s_oppo_raw_count; i++) {
             int dup = 0;
             int special = (s_oppos[i].car_number < 0 || s_oppos[i].car_number == 500 || s_oppos[i].car_number == 501);
@@ -1225,9 +1202,6 @@ static void meld_build_music(void) {
 
     // Deduplicate by a lightweight hash of the first 4KB + a track number scan.
     for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-        if (s_game_method[g] != 1) {
-            continue;
-        }
         // Tracks are Track02..Track09.
         for (t = 2; t <= 9; t++) {
             char rel[64];
@@ -1254,36 +1228,14 @@ static void meld_build_music(void) {
             fclose(f);
 
             for (k = 0; k < s_music_count; k++) {
-                // Compare against previously stored hashes (stored inline via
-                // path recompute would be costly; use a parallel array).
-                (void)k;
-            }
-            // Simple dedup: rehash stored paths lazily.
-            {
-                for (k = 0; k < s_music_count; k++) {
-                    // recompute stored hash
-                    FILE* sf = OS_fopen(s_music_paths[k], "rb");
-                    if (sf) {
-                        unsigned char sh[4096];
-                        size_t sn = fread(sh, 1, sizeof(sh), sf);
-                        long ssz;
-                        uint64_t hh;
-                        fseek(sf, 0, SEEK_END);
-                        ssz = ftell(sf);
-                        fclose(sf);
-                        hh = meld_fnv1a(sh, sn) ^ (uint64_t)ssz;
-                        if (hh == h) {
-                            dup = 1;
-                            break;
-                        }
-                    }
+                if (s_music_hashes[k] == h) {
+                    dup = 1;
+                    break;
                 }
             }
-            if (dup) {
-                continue;
-            }
-            if (s_music_count < MELD_MAX_MUSIC) {
+            if (!dup && s_music_count < MELD_MAX_MUSIC) {
                 snprintf(s_music_paths[s_music_count], MAX_PATH, "%s", path);
+                s_music_hashes[s_music_count] = h;
                 s_music_count++;
             }
         }
@@ -1295,178 +1247,23 @@ int Meld_MusicAvailable(void) {
 }
 
 void Meld_ResolveMusicPath(int track, char* out, size_t len) {
+    // Meld cycles through the merged pool regardless of which CD track the game
+    // originally requested; only called when s_music_count > 0 (guarded by
+    // Meld_MusicAvailable() in AudioBackend_InitCDA).
     (void)track;
-    if (s_music_count == 0) {
-        snprintf(out, len, "MUSIC" MELD_SEP "Track02.ogg");
-        return;
-    }
     strncpy(out, s_music_paths[s_music_index % s_music_count], len - 1);
     out[len - 1] = 0;
     s_music_index++;
 }
 
 // ---------------------------------------------------------------------------
-// GOG ISO VFS
-// ---------------------------------------------------------------------------
-
-static int meld_ext_eq_smk(const char* path) {
-    size_t n = strlen(path);
-    if (n < 4) {
-        return 0;
-    }
-    return path[n - 4] == '.'
-        && (path[n - 3] == 's' || path[n - 3] == 'S')
-        && (path[n - 2] == 'm' || path[n - 2] == 'M')
-        && (path[n - 1] == 'k' || path[n - 1] == 'K');
-}
-
-static void meld_gog_init_slot(int idx, const char* dir) {
-    char gog_path[MAX_PATH];
-    tIso_image* img;
-
-    if (!Iso_FindGogInDir(dir, gog_path, sizeof(gog_path))) {
-        return;
-    }
-    img = Iso_Open(gog_path);
-    if (img == NULL) {
-        return;
-    }
-    if (Iso_ListDir(img, "DATA/CUTSCENE", s_gog[idx].smks, GOG_MAX_SMKS, &s_gog[idx].smk_count) != 0) {
-        LOG_WARN2("Meld: GOG open OK but DATA/CUTSCENE not found: %s", gog_path);
-        Iso_Close(img);
-        return;
-    }
-    s_gog[idx].img = img;
-    LOG_INFO3("Meld: GOG loaded %s (%d SMKs)", gog_path, s_gog[idx].smk_count);
-}
-
-static FILE* meld_gog_serve(int idx, const char* smk_name) {
-    int i;
-    if (s_gog[idx].img == NULL) {
-        return NULL;
-    }
-    for (i = 0; i < s_gog[idx].smk_count; i++) {
-        if (strcasecmp(s_gog[idx].smks[i].name, smk_name) == 0) {
-            return Iso_ServeEntry(s_gog[idx].img, &s_gog[idx].smks[i]);
-        }
-    }
-    return NULL;
-}
-
-// Serve an SMK file from GOG images in meld mode: active game first, then rest.
-// MIX_INTR.SMK uses the pre-selected random game when multiple games provide it.
-// Returns NULL if not found in any GOG.
-static FILE* meld_gog_fopen_meld(const char* path) {
-    const char* base;
-    int order[MELD_MAX_GAMES];
-    int n = 0;
-    int g;
-    int preferred;
-
-    if (!meld_ext_eq_smk(path)) {
-        return NULL;
-    }
-    base = meld_basename(path);
-
-    // MIX_INTR.SMK: serve from the randomly pre-selected source if set.
-    if (s_intro_game_idx >= 0 && strcasecmp(base, "MIX_INTR.SMK") == 0) {
-        if (s_intro_disk_path[0] != '\0') {
-            return OS_fopen(s_intro_disk_path, "rb");
-        }
-        return meld_gog_serve(s_intro_game_idx, base);
-    }
-
-    preferred = s_active_game;
-
-    if (preferred >= 0 && preferred < harness_game_config.game_dirs_count) {
-        order[n++] = preferred;
-    }
-    for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-        if (g != preferred) {
-            order[n++] = g;
-        }
-    }
-    for (g = 0; g < n; g++) {
-        FILE* f = meld_gog_serve(order[g], base);
-        if (f != NULL) {
-            return f;
-        }
-    }
-    return NULL;
-}
-
-void Meld_GogInit_Single(const char* dir) {
-    char cwd[MAX_PATH];
-    const char* search_dir = dir;
-    if (search_dir == NULL || search_dir[0] == '\0') {
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            search_dir = cwd;
-        } else {
-            return;
-        }
-    }
-    meld_gog_init_slot(GOG_SINGLE_IDX, search_dir);
-}
-
-FILE* Meld_GogFopen(const char* path, const char* mode) {
-    const char* base;
-    (void)mode;
-    if (!meld_ext_eq_smk(path)) {
-        return NULL;
-    }
-    if (strchr(mode, 'w') || strchr(mode, 'a')) {
-        return NULL;
-    }
-    base = meld_basename(path);
-    return meld_gog_serve(GOG_SINGLE_IDX, base);
-}
-
-// ---------------------------------------------------------------------------
 // Overlay dir
 // ---------------------------------------------------------------------------
 
-void Meld_CaptureExeDir(const char* argv0) {
-    /* MAX_PATH*2: cwd (MAX_PATH-1) + '/' + argv0 (MAX_PATH-1) + null */
-    char abs_path[MAX_PATH * 2];
-    char* sep;
-    char* sep2;
-    int is_abs;
-
-    if (argv0 == NULL) {
-        return;
+void Meld_SetOverlayDir(void) {
+    if (getcwd(harness_game_config.meld_overlay_dir, sizeof(harness_game_config.meld_overlay_dir)) == NULL) {
+        harness_game_config.meld_overlay_dir[0] = '\0';
     }
-    is_abs = (argv0[0] == '/') || (argv0[0] != '\0' && argv0[1] == ':');
-    if (is_abs) {
-        strncpy(abs_path, argv0, sizeof(abs_path) - 1);
-        abs_path[sizeof(abs_path) - 1] = '\0';
-    } else {
-        char cwd[MAX_PATH];
-        if (getcwd(cwd, sizeof(cwd)) == NULL) {
-            return;
-        }
-        /* Precision on argv0 bounds the output so the compiler can verify fit. */
-        snprintf(abs_path, sizeof(abs_path), "%s/%.*s", cwd, MAX_PATH - 1, argv0);
-    }
-    sep = strrchr(abs_path, '/');
-    sep2 = strrchr(abs_path, '\\');
-    if (sep2 > sep) {
-        sep = sep2;
-    }
-    if (sep != NULL) {
-        *sep = '\0';
-        strncpy(harness_game_config.meld_overlay_dir, abs_path,
-                sizeof(harness_game_config.meld_overlay_dir) - 1);
-        harness_game_config.meld_overlay_dir[sizeof(harness_game_config.meld_overlay_dir) - 1] = '\0';
-        LOG_INFO2("Meld: overlay dir: %s", harness_game_config.meld_overlay_dir);
-    }
-}
-
-// Save path
-// ---------------------------------------------------------------------------
-
-void Meld_SavePath(int slot, char* out, size_t len) {
-    (void)slot;
-    snprintf(out, len, "SAVEGAME_M");
 }
 
 // ---------------------------------------------------------------------------
@@ -1499,7 +1296,6 @@ void Meld_Init(void) {
         s_overlay_game_idx = 0;
     }
 
-    LOG_INFO2("Meld_Init: starting with %d game dirs", harness_game_config.game_dirs_count);
 
     gMeld_both_starting_cars = harness_game_config.meld_both_starting_cars;
 
@@ -1510,15 +1306,11 @@ void Meld_Init(void) {
             s_game_method[g] = 2;
         }
         s_game_contributed[g] = 0;
-        LOG_INFO3("Meld_Init: game[%d] dir=%s", g, harness_game_config.game_dirs[g].directory);
-        LOG_INFO3("Meld_Init: game[%d] method=%d", g, s_game_method[g]);
     }
 
     meld_build_races();
-    LOG_INFO2("Meld_Init: races built, count=%d", s_race_count);
-    if (s_race_count == 0) {
-        // Nothing merged; do not activate.
-        LOG_INFO("Meld_Init: no races found, not activating");
+    if (s_race_count == 0 || s_races_buf == NULL) {
+        // Nothing merged, or malloc failed during build.
         return;
     }
     meld_build_opponents();
@@ -1537,81 +1329,25 @@ void Meld_Init(void) {
 
     // Index GOG images for all game dirs so cutscenes can be served from them.
     for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-        meld_gog_init_slot(g, harness_game_config.game_dirs[g].directory);
+        Gog_InitSlot(g, harness_game_config.game_dirs[g].directory);
     }
+    Gog_BuildIntroProviders();
 
-    // Pick a random game's MIX_INTR.SMK for the intro. Check disk locations
-    // first (DATA/CUTSCENE/ then CUTSCENE/ under each game dir), then GOG.
-    // Collect all providers, then choose uniformly among them.
-    s_intro_disk_path[0] = '\0';
-    {
-        int  providers[MELD_MAX_GAMES];
-        char disk_paths[MELD_MAX_GAMES][MAX_PATH];
-        int  n = 0;
-        int  i;
-        /* Candidate subpaths to try on disk, in priority order. */
-        const char* disk_subpaths[] = {
-            "DATA" MELD_SEP "CUTSCENE" MELD_SEP "MIX_INTR.SMK",
-            "CUTSCENE" MELD_SEP "MIX_INTR.SMK",
-        };
-        for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-            int found = 0;
-            size_t sp;
-            /* Try disk locations first. */
-            for (sp = 0; sp < sizeof(disk_subpaths) / sizeof(disk_subpaths[0]); sp++) {
-                char candidate[MAX_PATH];
-                FILE* tf;
-                meld_join(candidate, sizeof(candidate),
-                    harness_game_config.game_dirs[g].directory, disk_subpaths[sp]);
-                tf = OS_fopen(candidate, "rb");
-                if (tf != NULL) {
-                    fclose(tf);
-                    providers[n] = g;
-                    strncpy(disk_paths[n], candidate, MAX_PATH - 1);
-                    disk_paths[n][MAX_PATH - 1] = '\0';
-                    n++;
-                    found = 1;
-                    break;
-                }
-            }
-            if (found) {
-                continue;
-            }
-            /* Fall back to GOG. */
-            for (i = 0; i < s_gog[g].smk_count; i++) {
-                if (strcasecmp(s_gog[g].smks[i].name, "MIX_INTR.SMK") == 0) {
-                    providers[n] = g;
-                    disk_paths[n][0] = '\0';
-                    n++;
-                    break;
-                }
-            }
-        }
-        if (n > 1) {
-            int chosen = (int)((unsigned)time(NULL) % (unsigned)n);
-            s_intro_game_idx = providers[chosen];
-            strncpy(s_intro_disk_path, disk_paths[chosen], MAX_PATH - 1);
-            s_intro_disk_path[MAX_PATH - 1] = '\0';
-            LOG_INFO3("Meld: random intro selected from game[%d] (of %d providers)", s_intro_game_idx, n);
-        }
-    }
-
-    LOG_INFO2("Meld active: %d races merged from games", gMeld_total_race_count);
 }
 
 // ---------------------------------------------------------------------------
 // Merged file accessors
 // ---------------------------------------------------------------------------
 
-FILE* Meld_OpenRaceFile(void) {
+static FILE* Meld_OpenRaceFile(void) {
     return fmemopen(s_races_buf, s_races_len, "rb");
 }
 
-FILE* Meld_OpenOpponentFile(void) {
+static FILE* Meld_OpenOpponentFile(void) {
     return fmemopen(s_oppo_buf, s_oppo_len, "rb");
 }
 
-FILE* Meld_OpenPartshopFile(void) {
+static FILE* Meld_OpenPartshopFile(void) {
     return fmemopen(s_partshop_buf, s_partshop_len, "rb");
 }
 
@@ -1625,77 +1361,6 @@ void Meld_SetActiveGame(int race_index) {
     }
     gMeld_use_net_starts = gMeld_net_races_active && race_index >= 0 && race_index < s_race_count && s_race_is_arena[race_index];
     s_current_race_index = race_index;
-}
-
-const char* Meld_ArenaMapPixName(void) {
-    if (s_current_race_index >= 0 && s_current_race_index < s_race_count && s_race_is_arena[s_current_race_index]) {
-        return s_race_map_pix[s_current_race_index];
-    }
-    return NULL;
-}
-
-int Meld_ArenaHasSceneFli(void) {
-    if (s_current_race_index >= 0 && s_current_race_index < s_race_count) {
-        return s_race_has_scene_fli[s_current_race_index];
-    }
-    return 0;
-}
-
-void Meld_DrawArenaMapPanel(br_pixelmap* back_screen, br_pixelmap* map_image,
-    br_pixelmap* src_palette, br_pixelmap* dst_palette,
-    int pl, int pt, int pr, int pb) {
-    int pw = pr - pl;
-    int ph = pb - pt;
-    int mw, mh, dx, dy, sx, sy, cw, ch;
-    if (map_image == NULL) {
-        return;
-    }
-    mw = map_image->width;
-    mh = map_image->height;
-    dx = pl + (pw - mw) / 2;
-    dy = pt + (ph - mh) / 2;
-    sx = dx < pl ? pl - dx : 0;
-    sy = dy < pt ? pt - dy : 0;
-    cw = mw - sx * 2;
-    ch = mh - sy * 2;
-    if (dx < pl) { dx = pl; }
-    if (dy < pt) { dy = pt; }
-    if (cw > pw) { cw = pw; }
-    if (ch > ph) { ch = ph; }
-    if (cw <= 0 || ch <= 0) {
-        return;
-    }
-    if (src_palette != NULL && dst_palette != NULL && src_palette != dst_palette) {
-        /* Remap pixels from src_palette (DRRENDER) colour space into dst_palette (FLI) space */
-        unsigned char remap[256];
-        const unsigned char* sp = (const unsigned char*)src_palette->pixels;
-        const unsigned char* dp = (const unsigned char*)dst_palette->pixels;
-        const unsigned char* src_row;
-        unsigned char* dst_row;
-        int i, j, row, col;
-        for (i = 0; i < 256; i++) {
-            int sr = sp[i * 4], sg = sp[i * 4 + 1], sb = sp[i * 4 + 2];
-            long best = 0x7fffffff;
-            int best_j = 0;
-            for (j = 0; j < 256; j++) {
-                int dr = sr - dp[j * 4], dg = sg - dp[j * 4 + 1], db = sb - dp[j * 4 + 2];
-                long dist = dr * dr + dg * dg + db * db;
-                if (dist < best) { best = dist; best_j = j; if (dist == 0) break; }
-            }
-            remap[i] = (unsigned char)best_j;
-        }
-        src_row = (const unsigned char*)map_image->pixels + sy * map_image->row_bytes + sx;
-        dst_row = (unsigned char*)back_screen->pixels + dy * back_screen->row_bytes + dx;
-        for (row = 0; row < ch; row++) {
-            for (col = 0; col < cw; col++) {
-                dst_row[col] = remap[src_row[col]];
-            }
-            src_row += map_image->row_bytes;
-            dst_row += back_screen->row_bytes;
-        }
-    } else {
-        BrPixelmapRectangleCopy(back_screen, dx, dy, map_image, sx, sy, cw, ch);
-    }
 }
 
 void Meld_SetActiveGame_Opponent(int opponent_index) {
@@ -1837,11 +1502,9 @@ static FILE* meld_patch_txt_serve(const char* raw_path, int game_idx, int method
     char decoded[1024];
     char patched[1024];
 
-    LOG_INFO3("Meld: patching TXT %s (game %d)", raw_path, game_idx);
 
     src = OS_fopen(raw_path, "rt");
     if (src == NULL) {
-        LOG_INFO2("Meld: failed to open TXT for patching: %s", raw_path);
         return NULL;
     }
 
@@ -1896,7 +1559,27 @@ static FILE* meld_patch_txt_serve(const char* raw_path, int game_idx, int method
         return NULL;
     }
 
-    return fmemopen(buf.data, buf.len, "rb");
+#ifdef _WIN32
+    // meld_fmemopen copies buf.data into the temp file via fwrite, so it is
+    // safe to free immediately after.
+    {
+        FILE* f = meld_fmemopen(buf.data, buf.len, "rb");
+        free(buf.data);
+        return f;
+    }
+#else
+    // fmemopen(NULL, ...) allocates its own internal buffer and frees it on
+    // fclose — fully in-memory, no disk write.
+    {
+        FILE* f = fmemopen(NULL, buf.len, "r+b");
+        if (f != NULL) {
+            fwrite(buf.data, 1, buf.len, f);
+            rewind(f);
+        }
+        free(buf.data);
+        return f;
+    }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -1904,17 +1587,6 @@ static FILE* meld_patch_txt_serve(const char* raw_path, int game_idx, int method
 // ---------------------------------------------------------------------------
 
 // Extract the trailing basename from a path (portable, handles both seps).
-static const char* meld_basename(const char* path) {
-    const char* p = path;
-    const char* last = path;
-    for (; *p; p++) {
-        if (*p == '/' || *p == '\\') {
-            last = p + 1;
-        }
-    }
-    return last;
-}
-
 // Return the portion of `path` after gApplication_path prefix, else the whole
 // path. gApplication_path is not visible here, so we heuristically strip up to
 // and including a "DATA" / "MUSIC" style leading segment: instead we simply try
@@ -2045,7 +1717,6 @@ FILE* Meld_fopen(const char* path, const char* mode) {
                 // the conflict map has entries (assets differ across games).
                 if (s_conflict_count > 0 && meld_needs_patching(tail)) {
                     FILE* patched;
-                    LOG_INFO3("Meld_fopen: conflict patch triggered for %s (game %d)", tail, order[g]);
                     fclose(f);
                     patched = meld_patch_txt_serve(candidate, order[g], s_game_method[order[g]]);
                     if (patched != NULL) {
@@ -2063,16 +1734,6 @@ FILE* Meld_fopen(const char* path, const char* mode) {
         }
     }
 
-    // 3. GOG fallback: serve SMK cutscene files from the active game's ISO image.
-    //    Disk files (step 1) always take precedence; GOG is only reached here.
-    if (!writing) {
-        FILE* f = meld_gog_fopen_meld(path);
-        if (f != NULL) {
-            return f;
-        }
-    }
-
-    LOG_INFO2("Meld_fopen: not found: %s", path);
     return NULL;
 }
 
@@ -2092,442 +1753,9 @@ void Meld_AddBothStartingCars(int frank, int* cars_avail, int* num_cars) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// MeldNetRaces: inject net-only tracks into the SP campaign
-// ---------------------------------------------------------------------------
-
-#define MELD_MAX_NET_MAPS 32
-static tMeld_race s_net_races[MELD_MAX_NET_MAPS];
-static int s_net_map_count = 0;
-
-/* XOR-decode a method-1 game data line in place.
- * Lines that start with '@' are encoded; the '@' is stripped and the rest decoded. */
-static void meld_decode_line_m1(char* s) {
-    static const unsigned char key[16] = {
-        0x6c,0x1b,0x99,0x5f, 0xb9,0xcd,0x5f,0x13,
-        0xcb,0x04,0x20,0x0e, 0x5e,0x1c,0xa1,0x0e
-    };
-    unsigned char* p;
-    int len, seed, i;
-    len = (int)strlen(s);
-    while (len > 0 && (s[len - 1] == '\r' || s[len - 1] == '\n')) {
-        s[--len] = '\0';
-    }
-    if (len == 0 || s[0] != '@') {
-        return;
-    }
-    memmove(s, s + 1, (size_t)len); /* drop '@' */
-    len--;
-    p = (unsigned char*)s;
-    seed = len % 16;
-    for (i = 0; i < len; i++) {
-        if (p[i] == 0x9f) p[i] = '\t';
-        p[i] = ((key[seed] ^ (p[i] - 32)) & 0x7F) + 32;
-        seed = (seed + 7) % 16;
-        if (p[i] == 0x9f) p[i] = '\t';
-    }
-}
-
-/* Read one significant (non-blank, non-comment) decoded line from an encrypted track file.
- * Returns 1 on success, 0 on EOF. */
-static int meld_read_decoded_sig_line(FILE* f, int method, char* out, int out_len) {
-    char buf[256];
-    while (fgets(buf, sizeof(buf), f) != NULL) {
-        char* p = buf;
-        char* end;
-        if (method == 1) {
-            meld_decode_line_m1(buf);
-        } else {
-            int l = (int)strlen(buf);
-            while (l > 0 && (buf[l - 1] == '\r' || buf[l - 1] == '\n')) buf[--l] = '\0';
-            if (l > 0 && buf[0] == '@') memmove(buf, buf + 1, (size_t)l);
-        }
-        /* trim leading whitespace */
-        while (*p == ' ' || *p == '\t') {
-            p++;
-        }
-        /* skip blank and comment lines */
-        if (*p == '\0' || *p == '\n' || *p == '\r' || (p[0] == '/' && p[1] == '/')) {
-            continue;
-        }
-        /* trim trailing whitespace and comments */
-        end = p + strlen(p) - 1;
-        while (end > p && (*end == '\n' || *end == '\r' || *end == ' ' || *end == '\t')) {
-            *end-- = '\0';
-        }
-        /* strip inline comment ( //<space> or // ) */
-        {
-            char* cm = strstr(p, "//");
-            if (cm != NULL) {
-                /* back-trim whitespace before the // */
-                char* t = cm - 1;
-                while (t > p && (*t == ' ' || *t == '\t')) {
-                    t--;
-                }
-                *(t + 1) = '\0';
-            }
-        }
-        if (*p == '\0') {
-            continue;
-        }
-        strncpy(out, p, (size_t)(out_len - 1));
-        out[out_len - 1] = '\0';
-        return 1;
-    }
-    return 0;
-}
-
-/* Open and scan a track file (DATA/RACES/<name>) from game dir game_idx,
- * returning the map-image pixelmap basename via out[].
- * Strategy: the map-image line immediately follows 3 consecutive .MAT lines
- * (standard_screen x3) + 1 integer (special_screens_count) + count*2 lines. */
-static int meld_extract_map_pix(int game_idx, int method, const char* track_file, char* out, int out_len) {
-    char path[MAX_PATH];
-    FILE* f;
-    char line[256];
-    int mat_streak;
-    size_t ln;
-
-    meld_join(path, sizeof(path), harness_game_config.game_dirs[game_idx].directory, "DATA");
-    meld_join(path, sizeof(path), path, "RACES");
-    meld_join(path, sizeof(path), path, track_file);
-
-    f = OS_fopen(path, "rb");
-    if (f == NULL) {
-        return 0;
-    }
-
-    mat_streak = 0;
-    while (meld_read_decoded_sig_line(f, method, line, sizeof(line))) {
-        ln = strlen(line);
-        if (ln >= 4 && strcasecmp(line + ln - 4, ".MAT") == 0) {
-            mat_streak++;
-        } else {
-            /* Non-MAT line: if preceded by exactly 3 MAT lines, this IS special_screens_count */
-            if (mat_streak == 3) {
-                int screens, skip, i;
-                char* base;
-                char* sep;
-                screens = atoi(line);
-                /* Each special screen = 4 scalars (1 line) + material name (1 line) */
-                skip = screens * 2;
-                for (i = 0; i < skip; i++) {
-                    if (!meld_read_decoded_sig_line(f, method, line, sizeof(line))) {
-                        goto done;
-                    }
-                }
-                /* Next line is the map pixelmap filename */
-                if (!meld_read_decoded_sig_line(f, method, line, sizeof(line))) {
-                    break;
-                }
-                base = line;
-                for (sep = line; *sep; sep++) {
-                    if (*sep == '/' || *sep == '\\') {
-                        base = sep + 1;
-                    }
-                }
-                strncpy(out, base, (size_t)(out_len - 1));
-                out[out_len - 1] = '\0';
-                fclose(f);
-                return 1;
-            }
-            mat_streak = 0;
-        }
-    }
-done:
-    fclose(f);
-    return 0;
-}
-
-int Meld_NetRaces_GetSPCount(void) {
-    return s_net_map_base_count;
-}
-
-int Meld_NetRaces_GetNetCount(void) {
-    return s_net_map_count;
-}
-
-int Meld_IsArenaTrack(void) {
-    return gMeld_use_net_starts;
-}
-
-void Meld_NetRaces_Init(void) {
-    int g, i, l, n, m;
-    tMeld_race r;
-    FILE* f;
-    int sp_count;
-    tMeld_buf buf;
-    int game_tc[MELD_MAX_GAMES];
-    int main_idx[MELD_MAX_RACES];
-    int solo_idx[MELD_MAX_RACES];
-    int main_count, solo_count;
-    tMeld_race* result[MELD_MAX_RACES];
-    int result_game[MELD_MAX_RACES];
-
-    if (!harness_game_config.meld_net_races) {
-        return;
-    }
-    if (harness_game_config.game_dirs_count < 1) {
-        return;
-    }
-
-    // Ensure decode methods are known for all configured game dirs.
-    for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-        if (s_game_method[g] == 0) {
-            s_game_method[g] = meld_detect_method(g);
-        }
-    }
-
-    // When meld is not active s_races[] is empty; populate it from each game's
-    // RACES.TXT so we have SP track names to compare against.
-    if (!gMeld_active && s_race_count == 0) {
-        for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-            int method = s_game_method[g];
-            f = meld_open_data(g, "RACES.TXT", "rb");
-            if (f == NULL) {
-                continue;
-            }
-            while (s_race_count < MELD_MAX_RACES) {
-                int rc = meld_read_one_race(f, method, &s_races[s_race_count]);
-                if (rc <= 0) {
-                    break;
-                }
-                if (s_races[s_race_count].num_lines <= 4) {
-                    continue;
-                }
-                s_races[s_race_count].game_idx = g;
-                s_race_count++;
-            }
-            fclose(f);
-        }
-    }
-
-    sp_count = s_race_count;
-
-    // Scan each game's NETRACES.TXT; collect entries not present in any SP list.
-    s_net_map_count = 0;
-    for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-        int method = s_game_method[g];
-        f = meld_open_data(g, "NETRACES.TXT", "rb");
-        if (f == NULL) {
-            continue;
-        }
-        for (;;) {
-            int found, rc;
-            if (s_net_map_count >= MELD_MAX_NET_MAPS) {
-                break;
-            }
-            rc = meld_read_one_race(f, method, &r);
-            if (rc <= 0) {
-                break;
-            }
-            found = 0;
-            for (i = 0; i < sp_count && !found; i++) {
-                if (strcasecmp(r.lines[0], s_races[i].lines[0]) == 0) {
-                    found = 1;
-                }
-            }
-            if (found) {
-                continue;
-            }
-            // Dedup across game dirs: skip if same name was already collected.
-            for (i = 0; i < s_net_map_count && !found; i++) {
-                if (strcasecmp(r.lines[0], s_net_races[i].lines[0]) == 0) {
-                    found = 1;
-                }
-            }
-            if (found) {
-                continue;
-            }
-            s_net_races[s_net_map_count] = r;
-            s_net_races[s_net_map_count].game_idx = g;
-            s_net_map_count++;
-        }
-        fclose(f);
-    }
-
-    if (s_net_map_count == 0) {
-        LOG_INFO("MeldNetRaces: no net-only tracks found");
-        return;
-    }
-
-    // Interleave SP and net races into final campaign order:
-    //   - Games with exactly 1 SP track slot in at rank ~50
-    //   - Net-only races are spread between rank 50 and rank 10
-    //   - Multi-track SP games fill the remaining slots in their sorted order
-    {
-        int total = sp_count + s_net_map_count;
-        int solo_pos, net_start, net_end;
-
-        memset(game_tc, 0, sizeof(game_tc));
-        for (i = 0; i < sp_count; i++) {
-            int gi = s_races[i].game_idx;
-            if (gi >= 0 && gi < MELD_MAX_GAMES) {
-                game_tc[gi]++;
-            }
-        }
-        main_count = 0;
-        solo_count = 0;
-        for (i = 0; i < sp_count; i++) {
-            int gi = s_races[i].game_idx;
-            if (gi >= 0 && gi < MELD_MAX_GAMES && game_tc[gi] == 1) {
-                solo_idx[solo_count++] = i;
-            } else {
-                main_idx[main_count++] = i;
-            }
-        }
-
-        memset(result, 0, sizeof(tMeld_race*) * (size_t)total);
-        memset(result_game, 0, sizeof(int) * (size_t)total);
-
-        // Position in the list for rank R: (99-R)*(total-1)/98
-        solo_pos = (total > 1) ? (49 * (total - 1) / 98) : 0;
-        net_end = (total > 1) ? (89 * (total - 1) / 98) : (total - 1);
-        net_start = solo_pos + solo_count;
-        if (net_start > net_end) {
-            net_end = net_start + s_net_map_count;
-        }
-
-        for (i = 0; i < solo_count && solo_pos + i < total; i++) {
-            result[solo_pos + i] = &s_races[solo_idx[i]];
-            result_game[solo_pos + i] = s_races[solo_idx[i]].game_idx;
-        }
-
-        for (n = 0; n < s_net_map_count; n++) {
-            int range = net_end - net_start;
-            int net_pos = net_start + (s_net_map_count == 1 ? range / 2 : (n + 1) * range / (s_net_map_count + 1));
-            while (net_pos < total && result[net_pos] != NULL) {
-                net_pos++;
-            }
-            if (net_pos >= total) {
-                net_pos = net_end;
-                while (net_pos >= net_start && result[net_pos] != NULL) {
-                    net_pos--;
-                }
-            }
-            if (net_pos >= 0 && net_pos < total) {
-                result[net_pos] = &s_net_races[n];
-                result_game[net_pos] = s_net_races[n].game_idx;
-            }
-        }
-
-        m = 0;
-        for (i = 0; i < total && m < main_count; i++) {
-            if (result[i] == NULL) {
-                result[i] = &s_races[main_idx[m]];
-                result_game[i] = s_races[main_idx[m]].game_idx;
-                m++;
-            }
-        }
-
-        free(s_races_buf);
-        s_races_buf = NULL;
-        s_races_len = 0;
-        mbuf_init(&buf);
-        memset(s_race_is_arena, 0, sizeof(s_race_is_arena));
-        memset(s_race_map_pix, 0, sizeof(s_race_map_pix));
-        {
-        int seq = 0; /* sequential index matching gRace_list[] */
-        for (i = 0; i < total; i++) {
-            int is_net;
-            if (result[i] == NULL) {
-                continue;
-            }
-            s_race_source_game[seq] = result_game[i];
-            is_net = (result[i] >= s_net_races && result[i] < s_net_races + MELD_MAX_NET_MAPS);
-            s_race_is_arena[seq] = is_net;
-            if (is_net) {
-                /* Extract map pixelmap filename from track file for use in race selection UI */
-                meld_extract_map_pix(result_game[i], s_game_method[result_game[i]], result[i]->lines[2],
-                    s_race_map_pix[seq], MELD_MAP_PIX_LEN);
-                LOG_INFO3("Meld arena track seq=%d track=%s", seq, result[i]->lines[2]);
-                LOG_INFO2("Meld arena pix='%s'", s_race_map_pix[seq]);
-            }
-            seq++;
-            if (is_net) {
-                /* Net race: line0=name, line1=FLI, line2=track, line3=chunk_count(0) */
-                char fli_line[MELD_LINE_LEN];
-                char tmp[MELD_LINE_LEN];
-                char *tok1, *tok2, *tok3;
-                mbuf_append_m1(&buf, result[i]->lines[0]);
-                strncpy(tmp, result[i]->lines[1], MELD_LINE_LEN - 1);
-                tmp[MELD_LINE_LEN - 1] = '\0';
-                tok1 = strtok(tmp, ",");
-                tok2 = strtok(NULL, ",");
-                tok3 = strtok(NULL, ",");
-                if (tok1 && tok2 && tok3) {
-                    /* Prefer DATA/ANIM/{trackname}.FLI as the scene thumbnail if it exists
-                     * in any game dir; fall back to the info-background (tok3) otherwise. */
-                    char scene_fli[MELD_LINE_LEN];
-                    char track_stem[MELD_LINE_LEN];
-                    char anim_rel[MELD_LINE_LEN];
-                    char *dot;
-                    int gd;
-                    FILE *probe;
-                    strncpy(track_stem, result[i]->lines[2], MELD_LINE_LEN - 1);
-                    track_stem[MELD_LINE_LEN - 1] = '\0';
-                    dot = strrchr(track_stem, '.');
-                    if (dot) {
-                        *dot = '\0';
-                    }
-                    /* Cap stem so "ANIM/<stem>.FLI" fits in MELD_LINE_LEN. */
-                    if (strlen(track_stem) > MELD_LINE_LEN - 11) {
-                        track_stem[MELD_LINE_LEN - 11] = '\0';
-                    }
-                    snprintf(anim_rel, sizeof(anim_rel), "ANIM" MELD_SEP "%s.FLI", track_stem);
-                    scene_fli[0] = '\0';
-                    for (gd = 0; gd < harness_game_config.game_dirs_count && gd < MELD_MAX_GAMES; gd++) {
-                        probe = meld_open_data(gd, anim_rel, "rb");
-                        if (probe) {
-                            fclose(probe);
-                            snprintf(scene_fli, sizeof(scene_fli), "%s.FLI", track_stem);
-                            s_race_has_scene_fli[seq - 1] = 1;
-                            break;
-                        }
-                    }
-                    snprintf(fli_line, MELD_LINE_LEN, "%s,%s,%s",
-                        scene_fli[0] != '\0' ? scene_fli : tok3, tok2, tok3);
-                } else {
-                    strncpy(fli_line, result[i]->lines[1], MELD_LINE_LEN - 1);
-                    fli_line[MELD_LINE_LEN - 1] = '\0';
-                }
-                mbuf_append_m1(&buf, fli_line);
-                mbuf_append_m1(&buf, result[i]->lines[2]);
-                /* Inject one text chunk showing "(???)" for the view-info screen.
-                 * GetALineAndDontArgue skips lines not starting with alnum or -./!&('"
-                 * so the text must start with an allowed character — '(' qualifies. */
-                mbuf_append_m1(&buf, "1");
-                mbuf_append_m1(&buf, "5,3");
-                mbuf_append_m1(&buf, "0,99");
-                mbuf_append_m1(&buf, "1");
-                mbuf_append_m1(&buf, "(\?\?\?)");
-            } else {
-                for (l = 0; l < result[i]->num_lines; l++) {
-                    mbuf_append_m1(&buf, result[i]->lines[l]);
-                }
-            }
-        }
-        mbuf_append_m1(&buf, "END");
-
-        s_net_map_base_count = sp_count;
-        s_race_count = total;
-        }
-    }
-
-    s_races_buf = buf.data;
-    s_races_len = buf.len;
-    gMeld_net_races_active = 1;
-
-    // Reset so LoadGeneralParameters re-detects the encryption method from the
-    // primary game's GENERAL.TXT (meld_detect_method leaves it set to the last
-    // game it inspected).
-    gEncryption_method = 0;
-
-    LOG_INFO2("MeldNetRaces: %d net-only track(s) added to campaign", s_net_map_count);
-}
-
 void Meld_Test_AddConflict(const char* basename) {
     meld_add_conflict(basename);
+    qsort(s_conflict_basenames, s_conflict_count, MELD_CONFLICT_NAMELEN, meld_conflict_cmp);
 }
 
 void Meld_Test_ClearConflicts(void) {

@@ -24,6 +24,9 @@ So consider this more of a mod that is just for fun: A wishlist for what I want 
 - Dynamic meld - Content from every game listed in `[Games]` will be melded at the engine level without needing a mod that changes game files. Cars, tracks, etc all get melded so you can have a single campaign with all the content. Tested with Carmageddon, Splat Pack and Xmas Demo.
 - When melding, can optionally add the two multiplayer arena tracks into the campaign, you'll get SUMO and COLISEUM as campaign tracks. There is no starting grid since you and opponents use the multiplayer starting positions. No peds, no checkpoints, just last man standing.
 - Allow configuration of stealworthyness (all cars can be stolen, steal percentage probability, and disabling of rank gate)
+
+## Features - Quality of life
+- Loads cutscenes from GAME.GOG/SPLAT.GOG ISO images shipped with the Steam version (and gog version?) rather than requiring them to be extracted to the CUTSCENES directory. It will _just work_ with the Steam/GOG release without manually extracting the cutscenes
 - Easier modding, see [Modding](#modding) below
 
 ## Bug fixes

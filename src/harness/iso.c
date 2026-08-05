@@ -253,8 +253,8 @@ int Iso_FindGogInDir(const char* dir, char* out, int out_size) {
     }
     while ((ent = readdir(d)) != NULL) {
         size_t nlen = strlen(ent->d_name);
-        if (nlen >= 4) {
-            const char* ext = ent->d_name + nlen - 4;
+        if (nlen >= 5) {
+            const char* ext = ent->d_name + nlen - 3; /* points at "GOG", not ".GOG" */
             if (toupper((unsigned char)ext[0]) == 'G' &&
                 toupper((unsigned char)ext[1]) == 'O' &&
                 toupper((unsigned char)ext[2]) == 'G' &&

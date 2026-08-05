@@ -2817,9 +2817,16 @@ void LoadRaceInfo(int pRace_index, tRace_info* pRace_info) {
 #endif
     }
 #ifdef DETHRACE_FIX_BUGS
-    if (pRace_info->map_image != NULL) { BrPixelmapFree(pRace_info->map_image); pRace_info->map_image = NULL; }
-    { const char* pn = Meld_ArenaMapPixName();
-      if (pn != NULL && pn[0] != '\0' && !Meld_ArenaHasSceneFli()) { pRace_info->map_image = LoadPixelmap((char*)pn); } }
+    if (pRace_info->map_image != NULL) {
+        BrPixelmapFree(pRace_info->map_image);
+        pRace_info->map_image = NULL;
+    }
+    {
+        char* pn = Meld_ArenaMapPixName();
+        if (pn != NULL && pn[0] != '\0' && !Meld_ArenaHasSceneFli()) {
+            pRace_info->map_image = LoadPixelmap(pn);
+        }
+    }
 #endif
     GetALineAndDontArgue(f, s);
     str = strtok(s, "\t ,/");

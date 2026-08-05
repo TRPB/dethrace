@@ -3320,7 +3320,11 @@ int CollCheck(tCollision_info* c, br_scalar dt) {
             ) {
                 BrVector3Scale(&normal_force, &normal_force, 0.01f);
             } else {
+#if defined(DETHRACE_FIX_BUGS)
                 BrVector3Scale(&normal_force, &normal_force, gMeld_use_net_starts && c->driver == eDriver_oppo ? 2.0f : 0.75f);
+#else
+                BrVector3Scale(&normal_force, &normal_force, 0.75f);
+#endif
             }
             if (
 #if defined(DETHRACE_FIX_BUGS)

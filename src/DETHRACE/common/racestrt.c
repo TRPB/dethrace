@@ -674,7 +674,9 @@ int ChangeCar(int pNet_mode, int* pCar_index, tNet_game_details* pNet_game) {
         }
     }
     for (i = 0; i < gProgram_state.number_of_cars; i++) {
+#if defined(DETHRACE_FIX_BUGS)
         Meld_SetActiveGame_Opponent(gProgram_state.cars_available[i]);
+#endif
         if (gOpponents[gProgram_state.cars_available[i]].stolen_car_image_data == NULL) {
             LoadFlicData(gOpponents[gProgram_state.cars_available[i]].stolen_car_flic_name,
                 &gOpponents[gProgram_state.cars_available[i]].stolen_car_image_data,

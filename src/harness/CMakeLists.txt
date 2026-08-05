@@ -47,13 +47,17 @@ target_sources(harness PRIVATE
     include/harness/audio.h
     include/harness/meld.h
     include/harness/iso.h
+    include/harness/gog.h
 
     ascii_tables.h
     harness_trace.c
     harness.c
     harness.h
     iso.c
+    gog.c
+    meld_internal.h
     meld.c
+    meld_netraces.c
 
     platforms/null.c
     platforms/null.h
