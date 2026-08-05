@@ -5739,7 +5739,7 @@ void NormalPositionExternalCamera(tCar_spec* c, tU32 pTime) {
                 // point sits at the real height without the per-frame wobble.
                 lag = c->pos.v[1] - gCamera_smooth_look_y;
                 gCamera_smooth_lag_y = (gCamera_smooth_lag_y + lag_rate * lag) / (lag_rate + 1.0f);
-                if (harness_game_config.camera_judder_fix >= 2) {
+                if (harness_game_config.camera_judder_fix == 1) {
                     // Smooth only the lateral (perpendicular-to-heading) component
                     // of the per-frame camera delta. Forward motion is left raw so
                     // normal driving introduces no lag; only sideways impulses are
