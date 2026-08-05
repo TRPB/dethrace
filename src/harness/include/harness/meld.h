@@ -2,6 +2,7 @@
 #define HARNESS_MELD_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "brender.h"
 
@@ -77,5 +78,20 @@ void Meld_DrawArenaMapPanel(br_pixelmap* back_screen, br_pixelmap* map_image,
 void Meld_Test_AddConflict(const char* basename);
 void Meld_Test_ClearConflicts(void);
 FILE* Meld_Test_PatchTxt(const char* path, int game_idx);
+
+// Synthetic opponent record for Meld_Test_Dedup.
+typedef struct {
+    const char* name;
+    uint64_t    car_hash;
+    int         is_placeholder;
+    int         car_number;
+    int         game_idx;
+} tMeld_Test_Oppo;
+
+// Run dedup on a synthetic opponent list. out_included[i]=1 if entry i
+// survives; out_char_ids[i] is its character group id (shared by all entries
+// with the same name), or -1 if deduped out or a cop. Returns survivor count.
+int Meld_Test_Dedup(const tMeld_Test_Oppo* in, int count,
+                    int* out_included, int* out_char_ids);
 
 #endif

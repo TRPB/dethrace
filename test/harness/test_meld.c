@@ -245,6 +245,81 @@ void test_meld_conflict_case_insensitive(void) {
     rmdir(dir_path);
 }
 
+// ---------------------------------------------------------------------------
+// Opponent dedup tests
+// ---------------------------------------------------------------------------
+
+// Same racer appearing in two game dirs with the same car: keep the first,
+// drop the second as an exact (name + car_hash) duplicate.
+void test_meld_dedup_same_car_dropped(void) {
+    tMeld_Test_Oppo in[] = {
+        { "Johnny Turbo", 0x1000, 0, 1, 0 }, // CARMA
+        { "Johnny Turbo", 0x1000, 0, 1, 1 }, // SPLAT — same name + hash
+    };
+    int included[2], char_ids[2];
+    int count = Meld_Test_Dedup(in, 2, included, char_ids);
+    TEST_ASSERT_EQUAL_INT(1, count);
+    TEST_ASSERT_TRUE(included[0]);
+    TEST_ASSERT_FALSE(included[1]);
+    TEST_ASSERT_EQUAL_INT(-1, char_ids[1]);
+}
+
+// Racer that only appears in one game dir: survives unchanged.
+void test_meld_dedup_unique_racer_kept(void) {
+    tMeld_Test_Oppo in[] = {
+        { "Alfonso Spaghetti", 0x2000, 0, 2, 1 }, // SPLAT only
+    };
+    int included[1], char_ids[1];
+    int count = Meld_Test_Dedup(in, 1, included, char_ids);
+    TEST_ASSERT_EQUAL_INT(1, count);
+    TEST_ASSERT_TRUE(included[0]);
+    TEST_ASSERT_EQUAL_INT(0, char_ids[0]);
+}
+
+// Character with a different car variant in each game (e.g. Vlad with
+// VLAD2.TXT and SUBFRAME.TXT): both survive and share the same char_id so
+// a race picks the character at most once via reservoir sampling.
+void test_meld_dedup_variants_share_char_id(void) {
+    tMeld_Test_Oppo in[] = {
+        { "Vlad", 0x3000, 0, 5, 1 }, // CARSPLAT, VLAD2.TXT
+        { "Vlad", 0x4000, 0, 5, 2 }, // XMASDEMO, SUBFRAME.TXT — different car
+    };
+    int included[2], char_ids[2];
+    int count = Meld_Test_Dedup(in, 2, included, char_ids);
+    TEST_ASSERT_EQUAL_INT(2, count);
+    TEST_ASSERT_TRUE(included[0]);
+    TEST_ASSERT_TRUE(included[1]);
+    TEST_ASSERT_EQUAL_INT(char_ids[0], char_ids[1]);
+}
+
+// Demo stand-in with placeholder graphics (mugshot flic == stolen-car flic)
+// AND a car model shared with a differently-named racer: must be dropped.
+// This is the "EVEN MAXER DAMAGE" scenario where the demo invents a fake
+// Max using Alfonso's car with eagle-car placeholder flics.
+void test_meld_dedup_placeholder_generic_car_dropped(void) {
+    tMeld_Test_Oppo in[] = {
+        { "Alfonso Spaghetti", 0x2000, 0, 2, 1 },   // real SPLAT racer
+        { "EVEN MAXER DAMAGE", 0x2000, 1, 25, 2 },  // demo fake: same car hash, placeholder flics
+    };
+    int included[2], char_ids[2];
+    int count = Meld_Test_Dedup(in, 2, included, char_ids);
+    TEST_ASSERT_EQUAL_INT(1, count);
+    TEST_ASSERT_TRUE(included[0]);
+    TEST_ASSERT_FALSE(included[1]);
+}
+
+// Demo-only racer with placeholder flics BUT a car model that no other racer
+// uses: keep it — unique car means it's a genuine character, not a stand-in.
+void test_meld_dedup_placeholder_unique_car_kept(void) {
+    tMeld_Test_Oppo in[] = {
+        { "Sinthea", 0x5000, 1, 7, 2 }, // is_placeholder=1, but car hash is unique
+    };
+    int included[1], char_ids[1];
+    int count = Meld_Test_Dedup(in, 1, included, char_ids);
+    TEST_ASSERT_EQUAL_INT(1, count);
+    TEST_ASSERT_TRUE(included[0]);
+}
+
 void test_meld_suite(void) {
     UnitySetTestFile(__FILE__);
     RUN_TEST(test_meld_identity_line_preserved);
@@ -253,4 +328,9 @@ void test_meld_suite(void) {
     RUN_TEST(test_meld_non_conflict_unchanged);
     RUN_TEST(test_meld_plaintext_lines_unchanged);
     RUN_TEST(test_meld_conflict_case_insensitive);
+    RUN_TEST(test_meld_dedup_same_car_dropped);
+    RUN_TEST(test_meld_dedup_unique_racer_kept);
+    RUN_TEST(test_meld_dedup_variants_share_char_id);
+    RUN_TEST(test_meld_dedup_placeholder_generic_car_dropped);
+    RUN_TEST(test_meld_dedup_placeholder_unique_car_kept);
 }

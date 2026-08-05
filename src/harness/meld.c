@@ -855,6 +855,67 @@ static int meld_read_general_car_names(int game_idx, char* frank_out, char* anna
     return 1;
 }
 
+// Dedup s_oppos[0..s_oppo_raw_count). Fills included[i]=1 for survivors.
+// Returns the count of survivors.
+static int meld_dedup_pass(int* included) {
+    int i, j;
+    int out_count = 0;
+    for (i = 0; i < s_oppo_raw_count; i++) {
+        int dup = 0;
+        int special = (s_oppos[i].car_number < 0 || s_oppos[i].car_number == 500 || s_oppos[i].car_number == 501);
+        for (j = 0; j < i; j++) {
+            if (!included[j]) {
+                continue;
+            }
+            if (special) {
+                int j_special = (s_oppos[j].car_number < 0 || s_oppos[j].car_number == 500 || s_oppos[j].car_number == 501);
+                if (j_special && s_oppos[j].car_hash == s_oppos[i].car_hash && s_oppos[i].car_hash != 0) {
+                    dup = 1;
+                    break;
+                }
+            } else {
+                if (strcmp(s_oppos[j].name, s_oppos[i].name) == 0 &&
+                    s_oppos[j].car_hash == s_oppos[i].car_hash) {
+                    dup = 1;
+                    break;
+                }
+            }
+        }
+        if (dup && gMeld_both_starting_cars && s_oppos[i].car_number < 0) {
+            int true_dup = 0;
+            for (j = 0; j < i; j++) {
+                if (included[j] && s_oppos[j].car_number < 0 &&
+                    s_oppos[j].game_idx == s_oppos[i].game_idx &&
+                    s_oppos[j].car_hash == s_oppos[i].car_hash) {
+                    true_dup = 1;
+                    break;
+                }
+            }
+            dup = true_dup;
+        }
+        if (!dup && s_oppos[i].is_placeholder) {
+            int generic_model = 0;
+            for (j = 0; j < s_oppo_raw_count; j++) {
+                if (j == i) {
+                    continue;
+                }
+                if (s_oppos[i].car_hash != 0 && s_oppos[j].car_hash == s_oppos[i].car_hash && strcmp(s_oppos[j].name, s_oppos[i].name) != 0) {
+                    generic_model = 1;
+                    break;
+                }
+            }
+            if (generic_model) {
+                dup = 1;
+            }
+        }
+        included[i] = !dup;
+        if (included[i]) {
+            out_count++;
+        }
+    }
+    return out_count;
+}
+
 static void meld_build_opponents(void) {
     int g;
     int i;
@@ -899,76 +960,9 @@ static void meld_build_opponents(void) {
         fclose(f);
     }
 
-    // Dedup: include one entry per (name, car_hash). For player cars
-    // (car_number < 0) and cops (500/501) dedup by car_hash only.
-    // Mark included entries.
     {
         int included[MELD_MAX_RAW_OPPONENTS];
-        for (i = 0; i < s_oppo_raw_count; i++) {
-            int dup = 0;
-            int special = (s_oppos[i].car_number < 0 || s_oppos[i].car_number == 500 || s_oppos[i].car_number == 501);
-            for (j = 0; j < i; j++) {
-                if (!included[j]) {
-                    continue;
-                }
-                if (special) {
-                    int j_special = (s_oppos[j].car_number < 0 || s_oppos[j].car_number == 500 || s_oppos[j].car_number == 501);
-                    if (j_special && s_oppos[j].car_hash == s_oppos[i].car_hash && s_oppos[i].car_hash != 0) {
-                        dup = 1;
-                        break;
-                    }
-                } else {
-                    if (strcmp(s_oppos[j].name, s_oppos[i].name) == 0 &&
-                        s_oppos[j].car_hash == s_oppos[i].car_hash) {
-                        dup = 1;
-                        break;
-                    }
-                }
-            }
-            // MeldBothStartingCars: never dedup player-car entries across
-            // different games — keep each game's starting car distinct.
-            // Only dedup within the same game (same game_idx + same hash).
-            if (dup && gMeld_both_starting_cars && s_oppos[i].car_number < 0) {
-                int true_dup = 0;
-                for (j = 0; j < i; j++) {
-                    if (included[j] && s_oppos[j].car_number < 0 &&
-                        s_oppos[j].game_idx == s_oppos[i].game_idx &&
-                        s_oppos[j].car_hash == s_oppos[i].car_hash) {
-                        true_dup = 1;
-                        break;
-                    }
-                }
-                dup = true_dup;
-            }
-            // Drop a degraded demo record: its graphics are a shared
-            // placeholder (mugshot flic == stolen-car flic, e.g. both
-            // EAGLERED.FLI) AND its car is a generic model reused by other
-            // racers, AND a proper record for the same racer exists elsewhere.
-            // Requiring a generic model keeps genuine mod cars (a unique model
-            // that merely lacks its own flics) and demo-only racers.
-            if (!dup && s_oppos[i].is_placeholder) {
-                int has_real = 0;
-                int generic_model = 0;
-                for (j = 0; j < s_oppo_raw_count; j++) {
-                    if (j == i) {
-                        continue;
-                    }
-                    if (!s_oppos[j].is_placeholder && strcmp(s_oppos[j].name, s_oppos[i].name) == 0) {
-                        has_real = 1;
-                    }
-                    if (s_oppos[i].car_hash != 0 && s_oppos[j].car_hash == s_oppos[i].car_hash && strcmp(s_oppos[j].name, s_oppos[i].name) != 0) {
-                        generic_model = 1;
-                    }
-                }
-                if (has_real && generic_model) {
-                    dup = 1;
-                }
-            }
-            included[i] = !dup;
-            if (included[i]) {
-                out_count++;
-            }
-        }
+        out_count = meld_dedup_pass(included);
 
         mbuf_init(&buf);
         snprintf(numbuf, sizeof(numbuf), "%d", out_count);
@@ -1777,4 +1771,53 @@ void Meld_Test_ClearConflicts(void) {
 
 FILE* Meld_Test_PatchTxt(const char* path, int game_idx) {
     return meld_patch_txt_serve(path, game_idx, 1);
+}
+
+int Meld_Test_Dedup(const tMeld_Test_Oppo* in, int count,
+                    int* out_included, int* out_char_ids) {
+    int included[MELD_MAX_RAW_OPPONENTS];
+    int i, slot, out_count;
+
+    s_oppo_raw_count = (count < MELD_MAX_RAW_OPPONENTS) ? count : MELD_MAX_RAW_OPPONENTS;
+    for (i = 0; i < s_oppo_raw_count; i++) {
+        memset(&s_oppos[i], 0, sizeof(s_oppos[i]));
+        strncpy(s_oppos[i].name, in[i].name, sizeof(s_oppos[i].name) - 1);
+        s_oppos[i].car_hash = in[i].car_hash;
+        s_oppos[i].is_placeholder = in[i].is_placeholder;
+        s_oppos[i].car_number = in[i].car_number;
+        s_oppos[i].game_idx = in[i].game_idx;
+    }
+
+    out_count = meld_dedup_pass(included);
+
+    slot = 0;
+    for (i = 0; i < s_oppo_raw_count; i++) {
+        out_included[i] = included[i];
+        if (!included[i]) {
+            out_char_ids[i] = -1;
+            continue;
+        }
+        if (slot < MELD_MAX_OPPONENTS) {
+            int p;
+            strncpy(s_slot_name[slot], s_oppos[i].name, sizeof(s_slot_name[slot]) - 1);
+            s_slot_name[slot][sizeof(s_slot_name[slot]) - 1] = '\0';
+            if (s_oppos[i].car_number == 500 || s_oppos[i].car_number == 501) {
+                s_opponent_char_id[slot] = -1;
+            } else {
+                s_opponent_char_id[slot] = slot;
+                for (p = 0; p < slot; p++) {
+                    if (s_opponent_char_id[p] >= 0 && strcmp(s_slot_name[p], s_slot_name[slot]) == 0) {
+                        s_opponent_char_id[slot] = s_opponent_char_id[p];
+                        break;
+                    }
+                }
+            }
+            out_char_ids[i] = s_opponent_char_id[slot];
+        } else {
+            out_char_ids[i] = -1;
+        }
+        slot++;
+    }
+
+    return out_count;
 }
