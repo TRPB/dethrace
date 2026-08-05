@@ -141,9 +141,11 @@ static char s_music_paths[MELD_MAX_MUSIC][MAX_PATH];
 static int s_music_count = 0;
 static int s_music_index = 0;
 
-// Index of the game whose MIX_INTR.SMK was randomly selected at init time,
-// or -1 if only one game (or none) provides it (no randomisation needed).
-static int s_intro_game_idx = -1;
+// Randomly selected intro provider. s_intro_game_idx >= 0 means a game was
+// chosen. s_intro_disk_path non-empty means serve from that disk path;
+// empty means serve from that game's GOG.
+static int  s_intro_game_idx = -1;
+static char s_intro_disk_path[MAX_PATH];
 
 // Forward declarations for helpers defined later.
 static void meld_join(char* dest, size_t len, const char* a, const char* b);
@@ -1366,10 +1368,15 @@ static FILE* meld_gog_fopen_meld(const char* path) {
     }
     base = meld_basename(path);
 
-    // MIX_INTR.SMK: use the randomly pre-selected game if set.
-    preferred = (s_intro_game_idx >= 0 && strcasecmp(base, "MIX_INTR.SMK") == 0)
-        ? s_intro_game_idx
-        : s_active_game;
+    // MIX_INTR.SMK: serve from the randomly pre-selected source if set.
+    if (s_intro_game_idx >= 0 && strcasecmp(base, "MIX_INTR.SMK") == 0) {
+        if (s_intro_disk_path[0] != '\0') {
+            return OS_fopen(s_intro_disk_path, "rb");
+        }
+        return meld_gog_serve(s_intro_game_idx, base);
+    }
+
+    preferred = s_active_game;
 
     if (preferred >= 0 && preferred < harness_game_config.game_dirs_count) {
         order[n++] = preferred;
@@ -1533,22 +1540,58 @@ void Meld_Init(void) {
         meld_gog_init_slot(g, harness_game_config.game_dirs[g].directory);
     }
 
-    // Pick a random game's MIX_INTR.SMK for the intro. Collect all game dirs
-    // that actually have the file, then choose uniformly among them.
+    // Pick a random game's MIX_INTR.SMK for the intro. Check disk locations
+    // first (DATA/CUTSCENE/ then CUTSCENE/ under each game dir), then GOG.
+    // Collect all providers, then choose uniformly among them.
+    s_intro_disk_path[0] = '\0';
     {
-        int providers[MELD_MAX_GAMES];
-        int n = 0;
-        int i;
+        int  providers[MELD_MAX_GAMES];
+        char disk_paths[MELD_MAX_GAMES][MAX_PATH];
+        int  n = 0;
+        int  i;
+        /* Candidate subpaths to try on disk, in priority order. */
+        const char* disk_subpaths[] = {
+            "DATA" MELD_SEP "CUTSCENE" MELD_SEP "MIX_INTR.SMK",
+            "CUTSCENE" MELD_SEP "MIX_INTR.SMK",
+        };
         for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
+            int found = 0;
+            size_t sp;
+            /* Try disk locations first. */
+            for (sp = 0; sp < sizeof(disk_subpaths) / sizeof(disk_subpaths[0]); sp++) {
+                char candidate[MAX_PATH];
+                FILE* tf;
+                meld_join(candidate, sizeof(candidate),
+                    harness_game_config.game_dirs[g].directory, disk_subpaths[sp]);
+                tf = OS_fopen(candidate, "rb");
+                if (tf != NULL) {
+                    fclose(tf);
+                    providers[n] = g;
+                    strncpy(disk_paths[n], candidate, MAX_PATH - 1);
+                    disk_paths[n][MAX_PATH - 1] = '\0';
+                    n++;
+                    found = 1;
+                    break;
+                }
+            }
+            if (found) {
+                continue;
+            }
+            /* Fall back to GOG. */
             for (i = 0; i < s_gog[g].smk_count; i++) {
                 if (strcasecmp(s_gog[g].smks[i].name, "MIX_INTR.SMK") == 0) {
-                    providers[n++] = g;
+                    providers[n] = g;
+                    disk_paths[n][0] = '\0';
+                    n++;
                     break;
                 }
             }
         }
         if (n > 1) {
-            s_intro_game_idx = providers[(int)((unsigned)time(NULL) % (unsigned)n)];
+            int chosen = (int)((unsigned)time(NULL) % (unsigned)n);
+            s_intro_game_idx = providers[chosen];
+            strncpy(s_intro_disk_path, disk_paths[chosen], MAX_PATH - 1);
+            s_intro_disk_path[MAX_PATH - 1] = '\0';
             LOG_INFO3("Meld: random intro selected from game[%d] (of %d providers)", s_intro_game_idx, n);
         }
     }
