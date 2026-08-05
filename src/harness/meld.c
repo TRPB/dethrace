@@ -1682,7 +1682,20 @@ FILE* Meld_fopen(const char* path, const char* mode) {
         return NULL;
     }
 
-    // 2. Rebuild with each game dir: active game first, then all in order.
+    // 2. For SMK cutscenes, route through the GOG/intro provider before doing
+    //    the disk fan-out below. Gog_FopenMeld returns NULL for non-SMK files
+    //    immediately, so this is a no-op for everything else. The intro path
+    //    uses a pre-randomised provider selected at init time — without this
+    //    ordering a game dir that has the intro on disk would always win over
+    //    GOG providers from other games.
+    {
+        FILE* f = Gog_FopenMeld(path, s_active_game);
+        if (f != NULL) {
+            return f;
+        }
+    }
+
+    // 3. Rebuild with each game dir: active game first, then all in order.
     {
         char tail[MAX_PATH];
         char candidate[MAX_PATH];
