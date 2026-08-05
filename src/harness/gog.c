@@ -11,7 +11,11 @@
 #include "meld_internal.h"
 
 #include <ctype.h>
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+typedef unsigned long uint32_t;
+#else
 #include <stdint.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

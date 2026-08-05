@@ -1,10 +1,23 @@
 #include "harness/iso.h"
 
 #include <ctype.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+#include <stdarg.h>
+static int iso_snprintf(char* buf, int count, const char* fmt, ...) {
+    int ret;
+    va_list ap;
+    va_start(ap, fmt);
+    ret = vsprintf(buf, fmt, ap);
+    va_end(ap);
+    (void)count;
+    return ret;
+}
+#define snprintf iso_snprintf
+#endif
 
 /* Raw Mode-1 sector layout: 12 sync + 4 header + 2048 data + 288 ECC */
 #define ISO_SECTOR_RAW  2352

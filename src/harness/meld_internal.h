@@ -24,7 +24,11 @@
 // '\' as separators. Returns a pointer into the original string (no copy).
 // Not OS_Basename: that uses _splitpath on Windows (drops extension) and POSIX
 // basename() on Linux (ignores '\', static buffer).
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+static __inline const char* meld_basename(const char* path) {
+#else
 static inline const char* meld_basename(const char* path) {
+#endif
     const char* p = path;
     const char* last = path;
     for (; *p; p++) {

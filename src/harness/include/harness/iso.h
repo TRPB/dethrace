@@ -1,7 +1,13 @@
 #ifndef HARNESS_ISO_H
 #define HARNESS_ISO_H
 
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+typedef unsigned char  uint8_t;
+typedef unsigned long  uint32_t;
+typedef unsigned long  uint64_t;
+#else
 #include <stdint.h>
+#endif
 #include <stdio.h>
 
 typedef struct {

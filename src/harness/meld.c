@@ -26,7 +26,10 @@ typedef unsigned long uint64_t;
 #include <string.h>
 
 #ifdef _WIN32
+#include <windows.h>
 #include <direct.h>
+#include <fcntl.h>
+#include <io.h>
 #define getcwd _getcwd
 // fmemopen shim: FILE_ATTRIBUTE_TEMPORARY keeps data in cache (avoids disk
 // writes for small files); FILE_FLAG_DELETE_ON_CLOSE auto-deletes on fclose.
@@ -49,7 +52,11 @@ static FILE* meld_fmemopen(void* buf, size_t size, const char* mode) {
     if (h == INVALID_HANDLE_VALUE) {
         return NULL;
     }
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+    fd = _open_osfhandle((long)h, _O_RDWR | _O_BINARY);
+#else
     fd = _open_osfhandle((intptr_t)h, _O_RDWR | _O_BINARY);
+#endif
     if (fd == -1) {
         CloseHandle(h);
         return NULL;
@@ -919,7 +926,6 @@ static int meld_dedup_pass(int* included) {
 static void meld_build_opponents(void) {
     int g;
     int i;
-    int j;
     int out_count = 0;
     tMeld_buf buf;
     char numbuf[64];

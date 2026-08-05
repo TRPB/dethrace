@@ -2,7 +2,11 @@
 #define HARNESS_MELD_H
 
 #include <stddef.h>
+#if defined(_MSC_VER) && _MSC_VER <= 1020
+typedef unsigned long uint64_t;
+#else
 #include <stdint.h>
+#endif
 #include <stdio.h>
 #include "brender.h"
 
