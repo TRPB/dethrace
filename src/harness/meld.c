@@ -4,6 +4,7 @@
 
 #include "harness/meld.h"
 #include "harness/config.h"
+#include "harness/iso.h"
 #include "harness/os.h"
 #include "harness/trace.h"
 
@@ -120,6 +121,19 @@ static int s_active_game = 0;
 // Index of the overlay (exe-dir) slot in game_dirs[], or -1 if not present.
 // The overlay is always tried first in Meld_fopen regardless of s_active_game.
 static int s_overlay_game_idx = -1;
+
+// GOG ISO images: one slot per meld game dir, plus slot MELD_MAX_GAMES for
+// single-game (Meld=0) mode. NULL img means no GOG found for that slot.
+#define GOG_MAX_SMKS   32
+#define GOG_SINGLE_IDX MELD_MAX_GAMES
+
+typedef struct {
+    tIso_image* img;
+    tIso_entry  smks[GOG_MAX_SMKS];
+    int         smk_count;
+} tGog_slot;
+
+static tGog_slot s_gog[MELD_MAX_GAMES + 1];
 
 // Music pool (absolute paths).
 static char s_music_paths[MELD_MAX_MUSIC][MAX_PATH];
@@ -1285,6 +1299,110 @@ void Meld_ResolveMusicPath(int track, char* out, size_t len) {
 }
 
 // ---------------------------------------------------------------------------
+// GOG ISO VFS
+// ---------------------------------------------------------------------------
+
+static int meld_ext_eq_smk(const char* path) {
+    size_t n = strlen(path);
+    if (n < 4) {
+        return 0;
+    }
+    return path[n - 4] == '.'
+        && (path[n - 3] == 's' || path[n - 3] == 'S')
+        && (path[n - 2] == 'm' || path[n - 2] == 'M')
+        && (path[n - 1] == 'k' || path[n - 1] == 'K');
+}
+
+static void meld_gog_init_slot(int idx, const char* dir) {
+    char gog_path[MAX_PATH];
+    tIso_image* img;
+
+    if (!Iso_FindGogInDir(dir, gog_path, sizeof(gog_path))) {
+        return;
+    }
+    img = Iso_Open(gog_path);
+    if (img == NULL) {
+        return;
+    }
+    if (Iso_ListDir(img, "DATA/CUTSCENE", s_gog[idx].smks, GOG_MAX_SMKS, &s_gog[idx].smk_count) != 0) {
+        LOG_WARN2("Meld: GOG open OK but DATA/CUTSCENE not found: %s", gog_path);
+        Iso_Close(img);
+        return;
+    }
+    s_gog[idx].img = img;
+    LOG_INFO3("Meld: GOG loaded %s (%d SMKs)", gog_path, s_gog[idx].smk_count);
+}
+
+static FILE* meld_gog_serve(int idx, const char* smk_name) {
+    int i;
+    if (s_gog[idx].img == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < s_gog[idx].smk_count; i++) {
+        if (strcasecmp(s_gog[idx].smks[i].name, smk_name) == 0) {
+            return Iso_ServeEntry(s_gog[idx].img, &s_gog[idx].smks[i]);
+        }
+    }
+    return NULL;
+}
+
+// Serve an SMK file from GOG images in meld mode: active game first, then rest.
+// Returns NULL if not found in any GOG.
+static FILE* meld_gog_fopen_meld(const char* path) {
+    const char* base;
+    int order[MELD_MAX_GAMES];
+    int n = 0;
+    int g;
+
+    if (!meld_ext_eq_smk(path)) {
+        return NULL;
+    }
+    base = meld_basename(path);
+
+    if (s_active_game >= 0 && s_active_game < harness_game_config.game_dirs_count) {
+        order[n++] = s_active_game;
+    }
+    for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
+        if (g != s_active_game) {
+            order[n++] = g;
+        }
+    }
+    for (g = 0; g < n; g++) {
+        FILE* f = meld_gog_serve(order[g], base);
+        if (f != NULL) {
+            return f;
+        }
+    }
+    return NULL;
+}
+
+void Meld_GogInit_Single(const char* dir) {
+    char cwd[MAX_PATH];
+    const char* search_dir = dir;
+    if (search_dir == NULL || search_dir[0] == '\0') {
+        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+            search_dir = cwd;
+        } else {
+            return;
+        }
+    }
+    meld_gog_init_slot(GOG_SINGLE_IDX, search_dir);
+}
+
+FILE* Meld_GogFopen(const char* path, const char* mode) {
+    const char* base;
+    (void)mode;
+    if (!meld_ext_eq_smk(path)) {
+        return NULL;
+    }
+    if (strchr(mode, 'w') || strchr(mode, 'a')) {
+        return NULL;
+    }
+    base = meld_basename(path);
+    return meld_gog_serve(GOG_SINGLE_IDX, base);
+}
+
+// ---------------------------------------------------------------------------
 // Overlay dir
 // ---------------------------------------------------------------------------
 
@@ -1397,6 +1515,11 @@ void Meld_Init(void) {
     // primary game's GENERAL.TXT (meld_readline_m leaves it set to the last
     // secondary game's method).
     gEncryption_method = 0;
+
+    // Index GOG images for all game dirs so cutscenes can be served from them.
+    for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
+        meld_gog_init_slot(g, harness_game_config.game_dirs[g].directory);
+    }
 
     LOG_INFO2("Meld active: %d races merged from games", gMeld_total_race_count);
 }
@@ -1862,6 +1985,15 @@ FILE* Meld_fopen(const char* path, const char* mode) {
                 }
                 return f;
             }
+        }
+    }
+
+    // 3. GOG fallback: serve SMK cutscene files from the active game's ISO image.
+    //    Disk files (step 1) always take precedence; GOG is only reached here.
+    if (!writing) {
+        FILE* f = meld_gog_fopen_meld(path);
+        if (f != NULL) {
+            return f;
         }
     }
 

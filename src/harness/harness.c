@@ -343,6 +343,10 @@ int Harness_Init(int* argc, char* argv[]) {
 
     Harness_DetectAndSetWorkingDirectory(argv[0]);
 
+    if (!harness_game_config.meld) {
+        Meld_GogInit_Single(harness_game_config.selected_dir);
+    }
+
     if (harness_game_info.mode == eGame_none) {
         Harness_DetectGameMode();
     }
@@ -645,10 +649,15 @@ int Harness_ProcessIniFile(void) {
 
 // Filesystem hooks
 FILE* Harness_Hook_fopen(const char* pathname, const char* mode) {
+    FILE* f;
     if (gMeld_active || gMeld_net_races_active) {
         return Meld_fopen(pathname, mode);
     }
-    return OS_fopen(pathname, mode);
+    f = OS_fopen(pathname, mode);
+    if (f == NULL) {
+        f = Meld_GogFopen(pathname, mode);
+    }
+    return f;
 }
 
 // Localization

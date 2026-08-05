@@ -46,11 +46,13 @@ target_sources(harness PRIVATE
     include/harness/os.h
     include/harness/audio.h
     include/harness/meld.h
+    include/harness/iso.h
 
     ascii_tables.h
     harness_trace.c
     harness.c
     harness.h
+    iso.c
     meld.c
 
     platforms/null.c

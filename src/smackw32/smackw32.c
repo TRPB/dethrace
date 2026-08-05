@@ -30,7 +30,7 @@ Smack* SMACK_CALL SmackOpen(const char* name, unsigned int flags, unsigned int e
     FILE* f = NULL;
     smk smk_handle;
 
-    f = OS_fopen(name, "rb");
+    f = Harness_Hook_fopen(name, "rb");
     if (f == NULL) {
         return NULL;
     }

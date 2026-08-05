@@ -55,6 +55,15 @@ void Meld_ResolveMusicPath(int track, char* out, size_t len);
 // Must be called before any chdir() changes the working directory.
 void Meld_CaptureExeDir(const char* argv0);
 
+// Index the GOG image (if any) in dir for single-game (Meld=0) cutscene
+// serving. Call once after the working directory has been set. Pass NULL or
+// empty string to fall back to the current working directory.
+void Meld_GogInit_Single(const char* dir);
+
+// Serve a cutscene SMK file from the single-game GOG index (Meld=0 path).
+// Returns a FILE* on success, NULL if not found or path is not an SMK.
+FILE* Meld_GogFopen(const char* path, const char* mode);
+
 // Save-file path (writes the meld-specific "SAVEGAME_M" directory path).
 void Meld_SavePath(int slot, char* out, size_t len);
 
