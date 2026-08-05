@@ -51,6 +51,14 @@ Can all be tuned in dethrace.ini
 - Achievements - just for fun, who wouldn't want an achievment to pop up when you kill your 10,000th ped 
 - Add existing AI as multiplayer mode bots
 
+## Install
+
+Same as upstream dethrace project with one optional addition.
+
+If you are using MeldNetRaces and want to see the arena race cards images, you'll need to install them. 
+
+Copy the `DATA` folder from the zip to the same folder as the executable (or run the game from a folder containg the `DATA` folder, or paste it into your `CARMAGEDDON\DATA` installation folder keeping the directory structure intact).
+
 ## Configuation
 
 The following new options are availble under the `[Slop]` section in dethrace.ini
