@@ -161,12 +161,22 @@ int gStop_opponents_moving = 0;
 // full-screen vertical heave. gCamera_smooth_look_y/dir_y hold an EMA-smoothed
 // car Y and forward pitch. gCamera_smooth_lag_y tracks how far the smoothed Y
 // lags the true Y (heavily smoothed) so gCamera_aim_y can add it back and aim at
-// the real height without re-introducing the wobble. gCamera_smooth_look gates
-// this to the normal follow camera; gCamera_smooth_look_valid tracks EMA seeding.
+// the real height without re-introducing the wobble.
+// CameraJudderFix=2 also smooths lateral (perpendicular-to-heading) camera
+// motion. Opponent side-pushes cause the collision resolver to wobble c->pos in
+// the lateral direction for a few frames; smoothing forward/lateral deltas
+// separately leaves normal driving unaffected while attenuating the wobble.
+// gCamera_smooth_lat_vel is the EMA of the per-frame lateral camera delta.
+// gCamera_prev_car_x/z hold the previous frame's car position for delta.
+// gCamera_smooth_look gates this to the normal follow camera;
+// gCamera_smooth_look_valid tracks EMA seeding.
 static br_scalar gCamera_smooth_look_y;
 static br_scalar gCamera_smooth_dir_y;
 static br_scalar gCamera_smooth_lag_y;
 static br_scalar gCamera_aim_y;
+static br_scalar gCamera_smooth_lat_vel;
+static br_scalar gCamera_prev_car_x;
+static br_scalar gCamera_prev_car_z;
 static int gCamera_smooth_look;
 static int gCamera_smooth_look_valid;
 #endif
@@ -5716,6 +5726,9 @@ void NormalPositionExternalCamera(tCar_spec* c, tU32 pTime) {
                 gCamera_smooth_look_y = c->pos.v[1];
                 gCamera_smooth_dir_y = c->direction.v[1];
                 gCamera_smooth_lag_y = 0.0f;
+                gCamera_smooth_lat_vel = 0.0f;
+                gCamera_prev_car_x = c->pos.v[0];
+                gCamera_prev_car_z = c->pos.v[2];
                 gCamera_smooth_look_valid = 1;
             } else {
                 br_scalar lag;
@@ -5726,6 +5739,26 @@ void NormalPositionExternalCamera(tCar_spec* c, tU32 pTime) {
                 // point sits at the real height without the per-frame wobble.
                 lag = c->pos.v[1] - gCamera_smooth_look_y;
                 gCamera_smooth_lag_y = (gCamera_smooth_lag_y + lag_rate * lag) / (lag_rate + 1.0f);
+                if (harness_game_config.camera_judder_fix >= 2) {
+                    // Smooth only the lateral (perpendicular-to-heading) component
+                    // of the per-frame camera delta. Forward motion is left raw so
+                    // normal driving introduces no lag; only sideways impulses are
+                    // filtered. c->direction is a unit vector so the XZ part has
+                    // magnitude ~1 on any driveable slope.
+                    br_scalar hx = c->direction.v[0], hz = c->direction.v[2];
+                    if (hx * hx + hz * hz > 0.01f) {
+                        br_scalar lx = -hz, lz = hx; // lateral direction (~unit)
+                        br_scalar dpx = c->pos.v[0] - gCamera_prev_car_x;
+                        br_scalar dpz = c->pos.v[2] - gCamera_prev_car_z;
+                        br_scalar delta_lat = dpx * lx + dpz * lz;
+                        gCamera_smooth_lat_vel = (gCamera_smooth_lat_vel + smooth_rate * delta_lat) / (smooth_rate + 1.0f);
+                        br_scalar correction = gCamera_smooth_lat_vel - delta_lat;
+                        gCamera->t.t.translate.t.v[0] += correction * lx;
+                        gCamera->t.t.translate.t.v[2] += correction * lz;
+                    }
+                    gCamera_prev_car_x = c->pos.v[0];
+                    gCamera_prev_car_z = c->pos.v[2];
+                }
             }
             gCamera_aim_y = gCamera_smooth_look_y + gCamera_smooth_lag_y;
         } else {

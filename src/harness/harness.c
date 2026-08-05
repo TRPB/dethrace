@@ -568,7 +568,7 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
     }
 
     else if (MATCH("Slop", "CameraJudderFix")) {
-        harness_game_config.camera_judder_fix = (value[0] == '1');
+        harness_game_config.camera_judder_fix = atoi(value);
     } else if (MATCH("Slop", "StealworthyAllCars")) {
         harness_game_config.stealworthy_all_cars = (value[0] == '1');
     } else if (MATCH("Slop", "StealworthyPercentage")) {
