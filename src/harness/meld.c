@@ -25,6 +25,7 @@ typedef unsigned long uint64_t;
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef _WIN32
 #define MELD_SEP "\\"
@@ -139,6 +140,10 @@ static tGog_slot s_gog[MELD_MAX_GAMES + 1];
 static char s_music_paths[MELD_MAX_MUSIC][MAX_PATH];
 static int s_music_count = 0;
 static int s_music_index = 0;
+
+// Index of the game whose MIX_INTR.SMK was randomly selected at init time,
+// or -1 if only one game (or none) provides it (no randomisation needed).
+static int s_intro_game_idx = -1;
 
 // Forward declarations for helpers defined later.
 static void meld_join(char* dest, size_t len, const char* a, const char* b);
@@ -1347,23 +1352,30 @@ static FILE* meld_gog_serve(int idx, const char* smk_name) {
 }
 
 // Serve an SMK file from GOG images in meld mode: active game first, then rest.
+// MIX_INTR.SMK uses the pre-selected random game when multiple games provide it.
 // Returns NULL if not found in any GOG.
 static FILE* meld_gog_fopen_meld(const char* path) {
     const char* base;
     int order[MELD_MAX_GAMES];
     int n = 0;
     int g;
+    int preferred;
 
     if (!meld_ext_eq_smk(path)) {
         return NULL;
     }
     base = meld_basename(path);
 
-    if (s_active_game >= 0 && s_active_game < harness_game_config.game_dirs_count) {
-        order[n++] = s_active_game;
+    // MIX_INTR.SMK: use the randomly pre-selected game if set.
+    preferred = (s_intro_game_idx >= 0 && strcasecmp(base, "MIX_INTR.SMK") == 0)
+        ? s_intro_game_idx
+        : s_active_game;
+
+    if (preferred >= 0 && preferred < harness_game_config.game_dirs_count) {
+        order[n++] = preferred;
     }
     for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
-        if (g != s_active_game) {
+        if (g != preferred) {
             order[n++] = g;
         }
     }
@@ -1519,6 +1531,26 @@ void Meld_Init(void) {
     // Index GOG images for all game dirs so cutscenes can be served from them.
     for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
         meld_gog_init_slot(g, harness_game_config.game_dirs[g].directory);
+    }
+
+    // Pick a random game's MIX_INTR.SMK for the intro. Collect all game dirs
+    // that actually have the file, then choose uniformly among them.
+    {
+        int providers[MELD_MAX_GAMES];
+        int n = 0;
+        int i;
+        for (g = 0; g < harness_game_config.game_dirs_count && g < MELD_MAX_GAMES; g++) {
+            for (i = 0; i < s_gog[g].smk_count; i++) {
+                if (strcasecmp(s_gog[g].smks[i].name, "MIX_INTR.SMK") == 0) {
+                    providers[n++] = g;
+                    break;
+                }
+            }
+        }
+        if (n > 1) {
+            s_intro_game_idx = providers[(int)((unsigned)time(NULL) % (unsigned)n)];
+            LOG_INFO3("Meld: random intro selected from game[%d] (of %d providers)", s_intro_game_idx, n);
+        }
     }
 
     LOG_INFO2("Meld active: %d races merged from games", gMeld_total_race_count);
