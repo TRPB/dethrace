@@ -19,6 +19,7 @@ So consider this more of a mod that is just for fun: A wishlist for what I want 
 - Sample rate shading (supersampling) support (3dfx mode only)
 - Opponent car level of detail always max + view distance increased 10x
 - Configureable tyre skid decal limits (blood trails, tyre marks and oil last significantly longer, normally the whole race)
+- Tyre skids/blood/oil decals are no longer hovering slightly above the ground
 
 ## Features - Gameplay
 - Dynamic meld - Content from every game listed in `[Games]` will be melded at the engine level without needing a mod that changes game files. Cars, tracks, etc all get melded so you can have a single campaign with all the content. Tested with Carmageddon, Splat Pack and Xmas Demo.

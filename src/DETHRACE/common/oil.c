@@ -227,6 +227,17 @@ void Vector3Interpolate(br_vector3* pDst, br_vector3* pFrom, br_vector3* pTo, br
 // IDA: void __usercall EnsureGroundDetailVisible(br_vector3 *pNew_pos@<EAX>, br_vector3 *pGround_normal@<EDX>, br_vector3 *pOld_pos@<EBX>)
 // FUNCTION: CARM95 0x00412a81
 void EnsureGroundDetailVisible(br_vector3* pNew_pos, br_vector3* pGround_normal, br_vector3* pOld_pos) {
+#if defined(DETHRACE_FIX_BUGS)
+    // Original approach lerps the mark toward the camera by 0.01*dist world
+    // units, so the lift above the surface grows with camera distance. At
+    // typical follow-cam ranges this floats marks above the wheel mesh and they
+    // render through wheels. Setting translation to the stored ground position
+    // avoids distance-dependent float; the per-geometry lift for skid marks is
+    // handled in StretchMark (mat.m[1] = normal * 0.001).
+    pNew_pos->v[0] = pOld_pos->v[0];
+    pNew_pos->v[1] = pOld_pos->v[1];
+    pNew_pos->v[2] = pOld_pos->v[2];
+#else
     br_scalar factor;
     br_scalar s;
     br_scalar dist;
@@ -250,6 +261,7 @@ void EnsureGroundDetailVisible(br_vector3* pNew_pos, br_vector3* pGround_normal,
         factor = 0.01f;
     }
     Vector3Interpolate(pNew_pos, pOld_pos, (br_vector3*)gCamera_to_world.m[3], factor);
+#endif
 }
 
 // IDA: void __usercall MungeOilsHeightAboveGround(tOil_spill_info *pOil@<EAX>)

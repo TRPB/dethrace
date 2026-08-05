@@ -286,6 +286,11 @@ void StretchMark(tSkid* pMark, br_vector3* pFrom, br_vector3* pTo, br_scalar pTe
         BrVector3Add(&temp, pTo, pFrom);
         BrVector3Scale(&pMark->pos, &temp, 0.5f);
         rows[3] = pMark->pos;
+#if defined(DETHRACE_FIX_BUGS)
+        // Lift model vertices (at y=1.0) 0.001 BU along the surface normal.
+        // The default mat.m[1]=(0,0.01,0) lifts in world Y regardless of slope.
+        BrVector3Scale(&rows[1], &pMark->normal, 0.001f);
+#endif
         model = pMark->actor->model;
         model->vertices[1].map.v[0] = pTexture_start / 0.05f;
         model->vertices[0].map.v[0] = model->vertices[1].map.v[0];
